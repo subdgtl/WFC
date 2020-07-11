@@ -4,6 +4,11 @@ version = "0.1.0"
 authors = ["yanchith <yanchi.toth@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+clap = "3.0.0-beta"
+env_logger = "0.7.1"
+hibitset = "0.6.3"
+log = "0.4.8"
+png = "0.16.6"
+rand = "0.7.3"
+rand_pcg = "0.2.1"
