@@ -10,33 +10,33 @@ use std::fmt;
 use hibitset::BitSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Tiled3AdjacencyKind {
+pub enum Tiled3dAdjacencyKind {
     X,
     Y,
     Z,
 }
 
-impl From<Direction> for Tiled3AdjacencyKind {
+impl From<Direction> for Tiled3dAdjacencyKind {
     fn from(direction: Direction) -> Self {
         match direction {
-            Direction::Left => Tiled3AdjacencyKind::X,
-            Direction::Right => Tiled3AdjacencyKind::X,
-            Direction::Front => Tiled3AdjacencyKind::Y,
-            Direction::Back => Tiled3AdjacencyKind::Y,
-            Direction::Down => Tiled3AdjacencyKind::Z,
-            Direction::Up => Tiled3AdjacencyKind::Z,
+            Direction::Left => Tiled3dAdjacencyKind::X,
+            Direction::Right => Tiled3dAdjacencyKind::X,
+            Direction::Front => Tiled3dAdjacencyKind::Y,
+            Direction::Back => Tiled3dAdjacencyKind::Y,
+            Direction::Down => Tiled3dAdjacencyKind::Z,
+            Direction::Up => Tiled3dAdjacencyKind::Z,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Tiled3Adjacency {
-    pub kind: Tiled3AdjacencyKind,
+pub struct Tiled3dAdjacency {
+    pub kind: Tiled3dAdjacencyKind,
     pub module_low: u32,
     pub module_high: u32,
 }
 
-impl fmt::Display for Tiled3Adjacency {
+impl fmt::Display for Tiled3dAdjacency {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -90,13 +90,13 @@ impl Direction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tiled3ObserveResult {
+pub enum Tiled3dObserveResult {
     Nondeterministic,
     Deterministic,
     Contradiction,
 }
 
-impl fmt::Display for Tiled3ObserveResult {
+impl fmt::Display for Tiled3dObserveResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Nondeterministic => write!(f, "non-determinsitic"),
@@ -107,15 +107,16 @@ impl fmt::Display for Tiled3ObserveResult {
 }
 
 #[derive(Debug)]
-pub struct Tiled3World {
+pub struct Tiled3dWorld {
     dims: [u16; 3],
-    adjacencies: Vec<Tiled3Adjacency>,
+    adjacencies: Vec<Tiled3dAdjacency>,
     slots: Vec<BitSet>,
     module_count: u32,
+    wrapping: bool,
 }
 
-impl Tiled3World {
-    pub fn new(dims: [u16; 3], adjacencies: Vec<Tiled3Adjacency>) -> Self {
+impl Tiled3dWorld {
+    pub fn new(dims: [u16; 3], adjacencies: Vec<Tiled3dAdjacency>, wrapping: bool) -> Self {
         assert!(dims[0] > 0);
         assert!(dims[1] > 0);
         assert!(dims[2] > 0);
@@ -159,6 +160,7 @@ impl Tiled3World {
             adjacencies,
             slots,
             module_count,
+            wrapping,
         }
     }
 
@@ -178,7 +180,7 @@ impl Tiled3World {
         }
     }
 
-    pub fn observe<R: rand::Rng>(&mut self, rng: &mut R) -> Tiled3ObserveResult {
+    pub fn observe<R: rand::Rng>(&mut self, rng: &mut R) -> Tiled3dObserveResult {
         let mut min_entropy_slot_index_and_value: Option<(usize, usize)> = None;
         for (i, slot) in self.slots.iter().enumerate() {
             let entropy = count_ones(slot);
@@ -186,7 +188,7 @@ impl Tiled3World {
             // slot is already collapsed. If entropy is 0, we hit a
             // contradiction and can bail out early.
             if entropy == 0 {
-                return Tiled3ObserveResult::Contradiction;
+                return Tiled3dObserveResult::Contradiction;
             }
 
             if entropy >= 2 {
@@ -254,7 +256,9 @@ impl Tiled3World {
                         for adj in self
                             .adjacencies
                             .iter()
-                            .filter(|adj| adj.kind == Tiled3AdjacencyKind::from(s.search_direction))
+                            .filter(|adj| {
+                                adj.kind == Tiled3dAdjacencyKind::from(s.search_direction)
+                            })
                             .filter(|adj| {
                                 if s.search_direction.is_positive() {
                                     slot_prev.contains(adj.module_low)
@@ -302,115 +306,151 @@ impl Tiled3World {
                     SearchState::SearchLeft => {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(slots_len, self.dims, slot_index);
-                        let pos_next = [prev_position(pos[0], dim_x), pos[1], pos[2]];
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
-
-                        log::debug!("LEFT  {:>3?} {:>3?}", pos, pos_next);
+                        let pos_next = if self.wrapping {
+                            [prev_position_wrapping(pos[0], dim_x), pos[1], pos[2]]
+                        } else {
+                            [prev_position_saturating(pos[0], dim_x), pos[1], pos[2]]
+                        };
 
                         s.search_state = SearchState::SearchRight;
 
-                        if !visited.contains(&slot_index_next) {
-                            stack.push(StackEntry {
-                                search_state: SearchState::Init,
-                                search_direction: Direction::Left,
-                                slot_index: slot_index_next,
-                                slot_index_prev: slot_index,
-                            });
+                        if pos != pos_next {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            log::debug!("LEFT  {:>3?} {:>3?}", pos, pos_next);
+
+                            if !visited.contains(&slot_index_next) {
+                                stack.push(StackEntry {
+                                    search_state: SearchState::Init,
+                                    search_direction: Direction::Left,
+                                    slot_index: slot_index_next,
+                                    slot_index_prev: slot_index,
+                                });
+                            }
                         }
                     }
                     SearchState::SearchRight => {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(slots_len, self.dims, slot_index);
-                        let pos_next = [next_position(pos[0], dim_x), pos[1], pos[2]];
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
-
-                        log::debug!("RIGHT {:>3?} {:>3?}", pos, pos_next);
+                        let pos_next = if self.wrapping {
+                            [next_position_wrapping(pos[0], dim_x), pos[1], pos[2]]
+                        } else {
+                            [next_position_saturating(pos[0], dim_x), pos[1], pos[2]]
+                        };
 
                         s.search_state = SearchState::SearchFront;
 
-                        if !visited.contains(&slot_index_next) {
-                            stack.push(StackEntry {
-                                search_state: SearchState::Init,
-                                search_direction: Direction::Right,
-                                slot_index: slot_index_next,
-                                slot_index_prev: slot_index,
-                            });
+                        if pos != pos_next {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            log::debug!("RIGHT {:>3?} {:>3?}", pos, pos_next);
+
+                            if !visited.contains(&slot_index_next) {
+                                stack.push(StackEntry {
+                                    search_state: SearchState::Init,
+                                    search_direction: Direction::Right,
+                                    slot_index: slot_index_next,
+                                    slot_index_prev: slot_index,
+                                });
+                            }
                         }
                     }
                     SearchState::SearchFront => {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(slots_len, self.dims, slot_index);
-                        let pos_next = [pos[0], prev_position(pos[1], dim_y), pos[2]];
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
-
-                        log::debug!("FRONT {:>3?} {:>3?}", pos, pos_next);
+                        let pos_next = if self.wrapping {
+                            [pos[0], prev_position_wrapping(pos[1], dim_y), pos[2]]
+                        } else {
+                            [pos[0], prev_position_saturating(pos[1], dim_y), pos[2]]
+                        };
 
                         s.search_state = SearchState::SearchBack;
 
-                        if !visited.contains(&slot_index_next) {
-                            stack.push(StackEntry {
-                                search_state: SearchState::Init,
-                                search_direction: Direction::Front,
-                                slot_index: slot_index_next,
-                                slot_index_prev: slot_index,
-                            });
+                        if pos != pos_next {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            log::debug!("FRONT {:>3?} {:>3?}", pos, pos_next);
+
+                            if !visited.contains(&slot_index_next) {
+                                stack.push(StackEntry {
+                                    search_state: SearchState::Init,
+                                    search_direction: Direction::Front,
+                                    slot_index: slot_index_next,
+                                    slot_index_prev: slot_index,
+                                });
+                            }
                         }
                     }
                     SearchState::SearchBack => {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(slots_len, self.dims, slot_index);
-                        let pos_next = [pos[0], next_position(pos[1], dim_y), pos[2]];
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
-
-                        log::debug!("BACK  {:>3?} {:>3?}", pos, pos_next);
+                        let pos_next = if self.wrapping {
+                            [pos[0], next_position_wrapping(pos[1], dim_y), pos[2]]
+                        } else {
+                            [pos[0], next_position_saturating(pos[1], dim_y), pos[2]]
+                        };
 
                         s.search_state = SearchState::SearchDown;
 
-                        if !visited.contains(&slot_index_next) {
-                            stack.push(StackEntry {
-                                search_state: SearchState::Init,
-                                search_direction: Direction::Back,
-                                slot_index: slot_index_next,
-                                slot_index_prev: slot_index,
-                            });
+                        if pos != pos_next {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            log::debug!("BACK  {:>3?} {:>3?}", pos, pos_next);
+
+                            if !visited.contains(&slot_index_next) {
+                                stack.push(StackEntry {
+                                    search_state: SearchState::Init,
+                                    search_direction: Direction::Back,
+                                    slot_index: slot_index_next,
+                                    slot_index_prev: slot_index,
+                                });
+                            }
                         }
                     }
                     SearchState::SearchDown => {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(slots_len, self.dims, slot_index);
-                        let pos_next = [pos[0], pos[1], prev_position(pos[2], dim_z)];
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
-
-                        log::debug!("DOWN  {:>3?} {:>3?}", pos, pos_next);
+                        let pos_next = if self.wrapping {
+                            [pos[0], pos[1], prev_position_wrapping(pos[2], dim_z)]
+                        } else {
+                            [pos[0], pos[1], prev_position_saturating(pos[2], dim_z)]
+                        };
 
                         s.search_state = SearchState::SearchUp;
 
-                        if !visited.contains(&slot_index_next) {
-                            stack.push(StackEntry {
-                                search_state: SearchState::Init,
-                                search_direction: Direction::Down,
-                                slot_index: slot_index_next,
-                                slot_index_prev: slot_index,
-                            });
+                        if pos != pos_next {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            log::debug!("DOWN  {:>3?} {:>3?}", pos, pos_next);
+
+                            if !visited.contains(&slot_index_next) {
+                                stack.push(StackEntry {
+                                    search_state: SearchState::Init,
+                                    search_direction: Direction::Down,
+                                    slot_index: slot_index_next,
+                                    slot_index_prev: slot_index,
+                                });
+                            }
                         }
                     }
                     SearchState::SearchUp => {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(slots_len, self.dims, slot_index);
-                        let pos_next = [pos[0], pos[1], next_position(pos[2], dim_z)];
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
-
-                        log::debug!("UP    {:>3?} {:>3?}", pos, pos_next);
+                        let pos_next = if self.wrapping {
+                            [pos[0], pos[1], next_position_wrapping(pos[2], dim_z)]
+                        } else {
+                            [pos[0], pos[1], next_position_saturating(pos[2], dim_z)]
+                        };
 
                         s.search_state = SearchState::Done;
 
-                        if !visited.contains(&slot_index_next) {
-                            stack.push(StackEntry {
-                                search_state: SearchState::Init,
-                                search_direction: Direction::Up,
-                                slot_index: slot_index_next,
-                                slot_index_prev: slot_index,
-                            });
+                        if pos != pos_next {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            log::debug!("UP    {:>3?} {:>3?}", pos, pos_next);
+
+                            if !visited.contains(&slot_index_next) {
+                                stack.push(StackEntry {
+                                    search_state: SearchState::Init,
+                                    search_direction: Direction::Up,
+                                    slot_index: slot_index_next,
+                                    slot_index_prev: slot_index,
+                                });
+                            }
                         }
                     }
                     SearchState::Done => {
@@ -427,7 +467,7 @@ impl Tiled3World {
             }
 
             if contradiction {
-                Tiled3ObserveResult::Contradiction
+                Tiled3dObserveResult::Contradiction
             } else {
                 // FIXME: This may be cleaner to check elsewhere?
                 let mut collapsed = true;
@@ -438,13 +478,13 @@ impl Tiled3World {
                 }
 
                 if collapsed {
-                    Tiled3ObserveResult::Deterministic
+                    Tiled3dObserveResult::Deterministic
                 } else {
-                    Tiled3ObserveResult::Nondeterministic
+                    Tiled3dObserveResult::Nondeterministic
                 }
             }
         } else {
-            Tiled3ObserveResult::Deterministic
+            Tiled3dObserveResult::Deterministic
         }
     }
 }
@@ -460,12 +500,12 @@ fn choose_random<R: rand::Rng>(bit_set: &BitSet, rng: &mut R) -> u32 {
     bit_set.iter().choose(rng).unwrap()
 }
 
-fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
+pub fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
     let [x, y, z] = position;
 
-    debug_assert!(x < dims[0]);
-    debug_assert!(y < dims[1]);
-    debug_assert!(z < dims[2]);
+    assert!(x < dims[0]);
+    assert!(y < dims[1]);
+    assert!(z < dims[2]);
 
     let dim_x = usize::from(dims[0]);
     let dim_y = usize::from(dims[1]);
@@ -475,13 +515,13 @@ fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
 
     let index = usize::from(x) + usize::from(y) * slots_per_row + usize::from(z) * slots_per_layer;
 
-    debug_assert!(index < len);
+    assert!(index < len);
 
     index
 }
 
-fn index_to_position(len: usize, dims: [u16; 3], index: usize) -> [u16; 3] {
-    debug_assert!(index < len);
+pub fn index_to_position(len: usize, dims: [u16; 3], index: usize) -> [u16; 3] {
+    assert!(index < len);
 
     let dim_x = usize::from(dims[0]);
     let dim_y = usize::from(dims[1]);
@@ -493,21 +533,31 @@ fn index_to_position(len: usize, dims: [u16; 3], index: usize) -> [u16; 3] {
     let y = u16::try_from(index % slots_per_layer / slots_per_row).unwrap();
     let z = u16::try_from(index / slots_per_layer).unwrap();
 
-    debug_assert!(x < dims[0]);
-    debug_assert!(y < dims[1]);
-    debug_assert!(z < dims[2]);
+    assert!(x < dims[0]);
+    assert!(y < dims[1]);
+    assert!(z < dims[2]);
 
     [x, y, z]
 }
 
-fn prev_position(coord: u16, dim: u16) -> u16 {
+fn prev_position_saturating(pos: u16, dim: u16) -> u16 {
     debug_assert!(dim > 0);
-    coord.wrapping_sub(1).min(dim - 1)
+    pos.saturating_sub(1)
 }
 
-fn next_position(coord: u16, dim: u16) -> u16 {
+fn next_position_saturating(pos: u16, dim: u16) -> u16 {
     debug_assert!(dim > 0);
-    coord.wrapping_add(1) % dim
+    pos.saturating_add(1).min(dim - 1)
+}
+
+fn prev_position_wrapping(pos: u16, dim: u16) -> u16 {
+    debug_assert!(dim > 0);
+    pos.wrapping_sub(1).min(dim - 1)
+}
+
+fn next_position_wrapping(pos: u16, dim: u16) -> u16 {
+    debug_assert!(dim > 0);
+    pos.wrapping_add(1) % dim
 }
 
 #[cfg(test)]

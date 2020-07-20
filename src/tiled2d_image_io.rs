@@ -6,13 +6,13 @@ use std::io;
 use std::mem;
 
 use crate::convert::{cast_u32, cast_usize};
-use crate::tiled3_wfc::{Tiled3Adjacency, Tiled3AdjacencyKind};
+use crate::tiled2d_wfc::{Tiled2dAdjacency, Tiled2dAdjacencyKind};
 
 pub const PIXEL_SAMPLES: usize = 3;
 pub const CHUNK_SIZE: usize = 3;
 
 #[derive(Debug)]
-pub struct Tiled2ImageImportOptions {
+pub struct Tiled2dImageImportOptions {
     pub allow_rotate: bool,
     // FIXME: Implement mirroring. Decide whether the resulting combinatorial
     // explosion should be controlled somehow (e.g. has to be specifically
@@ -22,19 +22,19 @@ pub struct Tiled2ImageImportOptions {
 }
 
 #[derive(Debug)]
-pub struct Tiled2ImageImportResult {
-    pub adjacencies: Vec<Tiled3Adjacency>,
+pub struct Tiled2dImageImportResult {
+    pub adjacencies: Vec<Tiled2dAdjacency>,
     pub module_to_chunk: HashMap<u32, [[u8; PIXEL_SAMPLES]; CHUNK_SIZE * CHUNK_SIZE]>,
 }
 
 #[derive(Debug)]
-pub enum Tiled2ImageImportError {
+pub enum Tiled2dImageImportError {
     ImageTooSmall,
     ImageColorTypeUnsupported(png::ColorType),
     Decoding(png::DecodingError),
 }
 
-impl fmt::Display for Tiled2ImageImportError {
+impl fmt::Display for Tiled2dImageImportError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::ImageTooSmall => write!(f, "Image too small for chosen chunk size"),
@@ -46,18 +46,18 @@ impl fmt::Display for Tiled2ImageImportError {
     }
 }
 
-impl error::Error for Tiled2ImageImportError {}
+impl error::Error for Tiled2dImageImportError {}
 
-impl From<png::DecodingError> for Tiled2ImageImportError {
-    fn from(decoding_error: png::DecodingError) -> Tiled2ImageImportError {
+impl From<png::DecodingError> for Tiled2dImageImportError {
+    fn from(decoding_error: png::DecodingError) -> Tiled2dImageImportError {
         Self::Decoding(decoding_error)
     }
 }
 
 pub fn import_tiled_image<R: io::Read>(
     r: R,
-    options: &Tiled2ImageImportOptions,
-) -> Result<Tiled2ImageImportResult, Tiled2ImageImportError> {
+    options: &Tiled2dImageImportOptions,
+) -> Result<Tiled2dImageImportResult, Tiled2dImageImportError> {
     log::info!("Importing PNG...");
     log::info!("Decoding PNG...");
 
@@ -66,7 +66,7 @@ pub fn import_tiled_image<R: io::Read>(
 
     log::info!("PNG color type {:?}", info.color_type);
     if info.color_type != png::ColorType::RGB {
-        return Err(Tiled2ImageImportError::ImageColorTypeUnsupported(
+        return Err(Tiled2dImageImportError::ImageColorTypeUnsupported(
             info.color_type,
         ));
     }
@@ -150,8 +150,8 @@ pub fn import_tiled_image<R: io::Read>(
             let low = ids[x.wrapping_sub(1) % chunk_width + y * chunk_width];
             let high = ids[x + y * chunk_width];
 
-            adjacencies.insert(Tiled3Adjacency {
-                kind: Tiled3AdjacencyKind::X,
+            adjacencies.insert(Tiled2dAdjacency {
+                kind: Tiled2dAdjacencyKind::X,
                 module_low: low,
                 module_high: high,
             });
@@ -164,8 +164,8 @@ pub fn import_tiled_image<R: io::Read>(
                 let chunk_high90 = rotate_chunk_ccw(chunk_high);
                 let low90 = chunk_to_module[&chunk_low90];
                 let high90 = chunk_to_module[&chunk_high90];
-                adjacencies.insert(Tiled3Adjacency {
-                    kind: Tiled3AdjacencyKind::Y,
+                adjacencies.insert(Tiled2dAdjacency {
+                    kind: Tiled2dAdjacencyKind::Y,
                     module_low: low90,
                     module_high: high90,
                 });
@@ -174,8 +174,8 @@ pub fn import_tiled_image<R: io::Read>(
                 let chunk_high180 = rotate_chunk_ccw(chunk_high90);
                 let low180 = chunk_to_module[&chunk_low180];
                 let high180 = chunk_to_module[&chunk_high180];
-                adjacencies.insert(Tiled3Adjacency {
-                    kind: Tiled3AdjacencyKind::X,
+                adjacencies.insert(Tiled2dAdjacency {
+                    kind: Tiled2dAdjacencyKind::X,
                     module_low: high180,
                     module_high: low180,
                 });
@@ -184,8 +184,8 @@ pub fn import_tiled_image<R: io::Read>(
                 let chunk_high270 = rotate_chunk_ccw(chunk_high180);
                 let low270 = chunk_to_module[&chunk_low270];
                 let high270 = chunk_to_module[&chunk_high270];
-                adjacencies.insert(Tiled3Adjacency {
-                    kind: Tiled3AdjacencyKind::Y,
+                adjacencies.insert(Tiled2dAdjacency {
+                    kind: Tiled2dAdjacencyKind::Y,
                     module_low: high270,
                     module_high: low270,
                 });
@@ -199,8 +199,8 @@ pub fn import_tiled_image<R: io::Read>(
             let high = ids[x + (y.wrapping_sub(1) % chunk_height) * chunk_width];
             let low = ids[x + y * chunk_width];
 
-            adjacencies.insert(Tiled3Adjacency {
-                kind: Tiled3AdjacencyKind::Y,
+            adjacencies.insert(Tiled2dAdjacency {
+                kind: Tiled2dAdjacencyKind::Y,
                 module_low: low,
                 module_high: high,
             });
@@ -213,8 +213,8 @@ pub fn import_tiled_image<R: io::Read>(
                 let chunk_high90 = rotate_chunk_ccw(chunk_high);
                 let low90 = chunk_to_module[&chunk_low90];
                 let high90 = chunk_to_module[&chunk_high90];
-                adjacencies.insert(Tiled3Adjacency {
-                    kind: Tiled3AdjacencyKind::X,
+                adjacencies.insert(Tiled2dAdjacency {
+                    kind: Tiled2dAdjacencyKind::X,
                     module_low: high90,
                     module_high: low90,
                 });
@@ -223,8 +223,8 @@ pub fn import_tiled_image<R: io::Read>(
                 let chunk_high180 = rotate_chunk_ccw(chunk_high90);
                 let low180 = chunk_to_module[&chunk_low180];
                 let high180 = chunk_to_module[&chunk_high180];
-                adjacencies.insert(Tiled3Adjacency {
-                    kind: Tiled3AdjacencyKind::Y,
+                adjacencies.insert(Tiled2dAdjacency {
+                    kind: Tiled2dAdjacencyKind::Y,
                     module_low: high180,
                     module_high: low180,
                 });
@@ -233,8 +233,8 @@ pub fn import_tiled_image<R: io::Read>(
                 let chunk_high270 = rotate_chunk_ccw(chunk_high180);
                 let low270 = chunk_to_module[&chunk_low270];
                 let high270 = chunk_to_module[&chunk_high270];
-                adjacencies.insert(Tiled3Adjacency {
-                    kind: Tiled3AdjacencyKind::X,
+                adjacencies.insert(Tiled2dAdjacency {
+                    kind: Tiled2dAdjacencyKind::X,
                     module_low: low270,
                     module_high: high270,
                 });
@@ -242,19 +242,24 @@ pub fn import_tiled_image<R: io::Read>(
         }
     }
 
-    for id in module_to_chunk.keys() {
-        adjacencies.insert(Tiled3Adjacency {
-            kind: Tiled3AdjacencyKind::Z,
-            module_low: *id,
-            module_high: *id,
-        });
-    }
+    // If we wanted to input 2d adjacencies to the 3d solver, we would need to
+    // enrich the adjacencies such that they could always connect themselves
 
-    Ok(Tiled2ImageImportResult {
+    // for id in module_to_chunk.keys() {
+    //     adjacencies.insert(Tiled3Adjacency {
+    //         kind: Tiled3AdjacencyKind::Z,
+    //         module_low: *id,
+    //         module_high: *id,
+    //     });
+    // }
+
+    Ok(Tiled2dImageImportResult {
         adjacencies: adjacencies.into_iter().collect(),
         module_to_chunk,
     })
 }
+
+// FIXME: Error handling for writing
 
 pub fn export_tiled_image<W: io::Write>(
     w: &mut W,
