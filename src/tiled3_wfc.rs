@@ -246,9 +246,6 @@ impl Tiled3World {
                         let slot = &self.slots[s.slot_index];
                         let slot_prev = &self.slots[s.slot_index_prev];
 
-                        // println!(">>> SLOT {:?}", slot);
-                        // println!(">>> SLOT PREV {:?}", slot_prev);
-
                         // FIXME: @Optimization This is only allocated to
                         // appease the borrowchecker. Can we not allocate the
                         // bit difference using slice::split_at_mut or similar?
@@ -268,7 +265,6 @@ impl Tiled3World {
                                 }
                             })
                         {
-                            // println!(">>> ADJ {}", adj);
                             if s.search_direction.is_positive() {
                                 new_slot.add(adj.module_high);
                             } else {
@@ -281,7 +277,6 @@ impl Tiled3World {
                         debug_assert!(slot_len > 0);
                         debug_assert!(slot_len >= new_slot_len);
 
-                        // println!(">>> NEW SLOT {:?}", new_slot);
                         self.slots[s.slot_index] = new_slot;
 
                         log::debug!(
