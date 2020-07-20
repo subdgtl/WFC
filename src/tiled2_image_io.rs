@@ -289,7 +289,7 @@ pub fn export_tiled_image<W: io::Write>(
         );
     }
 
-    let mut encoder = png::Encoder::new(w, u32::from(pixel_width), u32::from(pixel_height));
+    let mut encoder = png::Encoder::new(w, pixel_width, pixel_height);
     encoder.set_color(png::ColorType::RGB);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().unwrap();
@@ -373,15 +373,15 @@ fn read_chunk(
 
     let mut result = [0; PIXEL_SAMPLES * CHUNK_SIZE * CHUNK_SIZE];
 
-    for (i, image_i) in (row1_begin..row1_end).into_iter().enumerate() {
-        result[PIXEL_SAMPLES * CHUNK_SIZE * 0 + i] = buffer[image_i];
+    for (i, image_i) in (row1_begin..row1_end).enumerate() {
+        result[i] = buffer[image_i];
     }
 
-    for (i, image_i) in (row2_begin..row2_end).into_iter().enumerate() {
-        result[PIXEL_SAMPLES * CHUNK_SIZE * 1 + i] = buffer[image_i];
+    for (i, image_i) in (row2_begin..row2_end).enumerate() {
+        result[PIXEL_SAMPLES * CHUNK_SIZE + i] = buffer[image_i];
     }
 
-    for (i, image_i) in (row3_begin..row3_end).into_iter().enumerate() {
+    for (i, image_i) in (row3_begin..row3_end).enumerate() {
         result[PIXEL_SAMPLES * CHUNK_SIZE * 2 + i] = buffer[image_i];
     }
 
@@ -431,15 +431,15 @@ fn write_chunk(
     let chunk_flat: [u8; PIXEL_SAMPLES * CHUNK_SIZE * CHUNK_SIZE] =
         unsafe { mem::transmute(chunk) };
 
-    for (i, image_i) in (row1_begin..row1_end).into_iter().enumerate() {
-        buffer[image_i] = chunk_flat[PIXEL_SAMPLES * CHUNK_SIZE * 0 + i];
+    for (i, image_i) in (row1_begin..row1_end).enumerate() {
+        buffer[image_i] = chunk_flat[i];
     }
 
-    for (i, image_i) in (row2_begin..row2_end).into_iter().enumerate() {
-        buffer[image_i] = chunk_flat[PIXEL_SAMPLES * CHUNK_SIZE * 1 + i];
+    for (i, image_i) in (row2_begin..row2_end).enumerate() {
+        buffer[image_i] = chunk_flat[PIXEL_SAMPLES * CHUNK_SIZE + i];
     }
 
-    for (i, image_i) in (row3_begin..row3_end).into_iter().enumerate() {
+    for (i, image_i) in (row3_begin..row3_end).enumerate() {
         buffer[image_i] = chunk_flat[PIXEL_SAMPLES * CHUNK_SIZE * 2 + i];
     }
 }

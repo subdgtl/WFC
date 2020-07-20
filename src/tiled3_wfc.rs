@@ -120,7 +120,7 @@ impl Tiled3World {
         assert!(dims[1] > 0);
         assert!(dims[2] > 0);
 
-        assert!(adjacencies.len() > 0);
+        assert!(!adjacencies.is_empty());
 
         let mut modules = BitSet::new();
         let mut module_count = 0;
