@@ -125,8 +125,8 @@ pub fn export_tiled_text<W: io::Write>(w: &mut W, dims: [u16; 3], slots: &[Optio
     writeln!(w, "{} {} {}", dims[0], dims[1], dims[2]).unwrap();
     writeln!(w).unwrap();
 
-    for z in (0..dims[2]).into_iter().rev() {
-        for y in (0..dims[1]).into_iter().rev() {
+    for z in (0..dims[2]).rev() {
+        for y in (0..dims[1]).rev() {
             let mut first = true;
             for x in 0..dims[0] {
                 let index = tiled3d_wfc::position_to_index(slots.len(), dims, [x, y, z]);
