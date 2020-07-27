@@ -285,9 +285,9 @@ checksum = "a9f8082297d534141b30c8d39e9b1773713ab50fdbe4ff30f750d063b3bfd701"
 
 [[package]]
 name = "log"
-version = "0.4.8"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14b6052be84e6b71ab17edffc2eeabf5c2c3ae1fdb464aae35ac50c67a44e1f7"
+checksum = "4fabed175da42fed1fa0746b0ea71f412aa9d35e76e95e59b192c64b9dc2bf8b"
 dependencies = [
  "cfg-if",
 ]
@@ -340,9 +340,9 @@ checksum = "06de47b848347d8c4c94219ad8ecd35eb90231704b067e67e6ae2e36ee023510"
 
 [[package]]
 name = "png"
-version = "0.16.6"
+version = "0.16.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c150bf7479fafe3dd8740dbe48cc33b2a3efb7b0fe3483aced8bbc39f6d0238d"
+checksum = "dfe7f9f1c730833200b134370e1d5098964231af8450bce9b78ee3ab5278b970"
 dependencies = [
  "bitflags",
  "crc32fast",
@@ -582,6 +582,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinyvec"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d509a3e5acd065f0877e6db98d026d2900d57aa32abbb614a2cb959802c3ddf"
+
+[[package]]
 name = "unicode-segmentation"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -629,6 +635,8 @@ dependencies = [
  "png",
  "rand",
  "rand_pcg",
+ "regex",
+ "tinyvec",
 ]
 
 [[package]]

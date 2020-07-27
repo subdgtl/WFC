@@ -8,6 +8,7 @@ use std::fmt;
 // is usually below some reasonable number, like 256 or 512, as hibitset::BitSet
 // is already quite large: 640 bits (with 64bit usize) = usize + 3 * 3 * usize.
 use hibitset::BitSet;
+use tinyvec::TinyVec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tiled3dAdjacencyKind {
@@ -164,11 +165,11 @@ impl Tiled3dWorld {
         }
     }
 
-    pub fn export_slots(&self) -> Vec<Option<u32>> {
+    pub fn export_slots(&self) -> Vec<TinyVec<[u32; 4]>> {
         use hibitset::BitSetLike as _;
         self.slots
             .iter()
-            .map(|bitset| bitset.iter().next())
+            .map(|bitset| bitset.iter().collect())
             .collect()
     }
 
@@ -176,6 +177,18 @@ impl Tiled3dWorld {
         for slot in &mut self.slots {
             for i in 0..self.module_count {
                 slot.add(i);
+            }
+        }
+    }
+
+    pub fn reset_to_initial_state(&mut self, initial_state: &[TinyVec<[u32; 4]>]) {
+        assert_eq!(self.slots.len(), initial_state.len());
+
+        for (i, slot) in self.slots.iter_mut().enumerate() {
+            slot.clear();
+
+            for module in &initial_state[i] {
+                slot.add(*module);
             }
         }
     }

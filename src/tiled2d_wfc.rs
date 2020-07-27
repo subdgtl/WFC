@@ -8,6 +8,7 @@ use std::fmt;
 // is usually below some reasonable number, like 256 or 512, as hibitset::BitSet
 // is already quite large: 640 bits (with 64bit usize) = usize + 3 * 3 * usize.
 use hibitset::BitSet;
+use tinyvec::TinyVec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tiled2dAdjacencyKind {
@@ -154,11 +155,11 @@ impl Tiled2dWorld {
         }
     }
 
-    pub fn export_slots(&self) -> Vec<Option<u32>> {
+    pub fn export_slots(&self) -> Vec<TinyVec<[u32; 4]>> {
         use hibitset::BitSetLike as _;
         self.slots
             .iter()
-            .map(|bitset| bitset.iter().next())
+            .map(|bitset| bitset.iter().collect())
             .collect()
     }
 

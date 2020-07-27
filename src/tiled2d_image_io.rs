@@ -5,6 +5,8 @@ use std::fmt;
 use std::io;
 use std::mem;
 
+use tinyvec::TinyVec;
+
 use crate::convert::{cast_u32, cast_usize};
 use crate::tiled2d_wfc::{Tiled2dAdjacency, Tiled2dAdjacencyKind};
 
@@ -265,11 +267,13 @@ pub fn export_tiled_image<W: io::Write>(
     w: &mut W,
     chunk_width: u16,
     chunk_height: u16,
-    slots: &[Option<u32>],
+    slots: &[TinyVec<[u32; 4]>],
     module_to_chunk: &HashMap<u32, [[u8; PIXEL_SAMPLES]; CHUNK_SIZE * CHUNK_SIZE]>,
 ) {
-    const ZERO_CHUNK: [[u8; PIXEL_SAMPLES]; CHUNK_SIZE * CHUNK_SIZE] =
+    const CHUNK_CONTRADICTION: [[u8; PIXEL_SAMPLES]; CHUNK_SIZE * CHUNK_SIZE] =
         [[255, 0, 255]; CHUNK_SIZE * CHUNK_SIZE];
+    const CHUNK_NONDETERMINISTIC: [[u8; PIXEL_SAMPLES]; CHUNK_SIZE * CHUNK_SIZE] =
+        [[0, 255, 255]; CHUNK_SIZE * CHUNK_SIZE];
 
     let pixel_width = cast_u32(usize::from(chunk_width) * CHUNK_SIZE);
     let pixel_height = cast_u32(usize::from(chunk_height) * CHUNK_SIZE);
@@ -280,9 +284,14 @@ pub fn export_tiled_image<W: io::Write>(
         let x = i % usize::from(chunk_width);
         let y = i / usize::from(chunk_width);
 
-        let chunk = slot
-            .and_then(|s| module_to_chunk.get(&s))
-            .unwrap_or(&ZERO_CHUNK);
+        let chunk = if slot.len() > 1 {
+            &CHUNK_NONDETERMINISTIC
+        } else {
+            slot
+                .first()
+                .and_then(|s| module_to_chunk.get(&s))
+                .unwrap_or(&CHUNK_CONTRADICTION)
+        };
 
         write_chunk(
             x,
