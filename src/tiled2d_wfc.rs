@@ -490,23 +490,23 @@ mod tests {
 
     #[test]
     fn test_index_to_position_unit() {
-        assert_eq!(index_to_position(1, [1, 1, 1], 0), [0, 0, 0]);
+        assert_eq!(index_to_position(1, [1, 1], 0), [0, 0]);
     }
 
     #[test]
     fn test_position_to_index_unit() {
-        assert_eq!(position_to_index(1, [1, 1, 1], [0, 0, 0]), 0);
+        assert_eq!(position_to_index(1, [1, 1], [0, 0]), 0);
     }
 
     #[test]
     #[should_panic]
     fn test_index_to_position_unit_oob() {
-        index_to_position(1, [1, 1, 1], 1);
+        index_to_position(1, [1, 1], 1);
     }
 
     #[test]
     #[should_panic]
     fn test_position_to_index_unit_oob() {
-        position_to_index(1, [1, 1, 1], [0, 0, 1]);
+        position_to_index(1, [1, 1], [0, 1]);
     }
 }
