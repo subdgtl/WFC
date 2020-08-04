@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::hash_map::{Entry, HashMap};
 use std::error;
 use std::fmt;
 use std::io;
-use std::num;
+use std::num::{self, NonZeroU32};
 use std::str::FromStr as _;
 
 use regex::Regex;
@@ -10,6 +10,9 @@ use tinyvec::TinyVec;
 
 use crate::convert::cast_u16;
 use crate::tiled3d_wfc::{self, Tiled3dAdjacency, Tiled3dAdjacencyKind};
+
+const SLOT_NAME_VOID: &str = "?";
+const SLOT_NAME_WILDCARD: &str = "*";
 
 #[derive(Debug)]
 pub enum Tiled3dAdjacencyRulesImportError {
@@ -20,11 +23,6 @@ pub enum Tiled3dAdjacencyRulesImportError {
     },
     InvalidAdjacencyKind {
         adjacency_kind: String,
-    },
-    ParseInt {
-        row: usize,
-        col: usize,
-        error: num::ParseIntError,
     },
     Csv(csv::Error),
 }
@@ -44,11 +42,6 @@ impl fmt::Display for Tiled3dAdjacencyRulesImportError {
             Self::InvalidAdjacencyKind { adjacency_kind } => {
                 write!(f, "Found invalid adjacency kind: {}", adjacency_kind)
             }
-            Self::ParseInt { row, col, error } => write!(
-                f,
-                "Could not parse integer on row {}, column {}. Error: {}",
-                row, col, error,
-            ),
             Self::Csv(csv_error) => write!(f, "{}", csv_error),
         }
     }
@@ -62,10 +55,20 @@ impl From<csv::Error> for Tiled3dAdjacencyRulesImportError {
     }
 }
 
+pub struct Tiled3dAdjacencyRulesImportResult {
+    pub adjacencies: Vec<Tiled3dAdjacency>,
+    pub name_to_module: HashMap<String, NonZeroU32>,
+    pub module_to_name: HashMap<NonZeroU32, String>,
+}
+
 pub fn import_adjacency_rules<R: io::Read>(
     r: R,
-) -> Result<Vec<Tiled3dAdjacency>, Tiled3dAdjacencyRulesImportError> {
+) -> Result<Tiled3dAdjacencyRulesImportResult, Tiled3dAdjacencyRulesImportError> {
     log::info!("Importing adjacency rules CSV");
+
+    let mut next_module = 1;
+    let mut module_to_name: HashMap<NonZeroU32, String> = HashMap::new();
+    let mut name_to_module: HashMap<String, NonZeroU32> = HashMap::new();
 
     let mut adjacencies: Vec<Tiled3dAdjacency> = Vec::new();
     let mut reader = csv::ReaderBuilder::new()
@@ -108,36 +111,52 @@ pub fn import_adjacency_rules<R: io::Read>(
                 });
             }
         };
-        let module_low = u32::from_str(module_low_str).map_err(|err| {
-            Tiled3dAdjacencyRulesImportError::ParseInt {
-                row: i,
-                col: 1,
-                error: err,
+
+        let module_low = match name_to_module.entry(module_low_str.to_string()) {
+            Entry::Occupied(occupied_entry) => *occupied_entry.get(),
+            Entry::Vacant(vacant_entry) => {
+                let module = NonZeroU32::new(next_module).unwrap();
+                vacant_entry.insert(module);
+                module_to_name.insert(module, module_low_str.to_string());
+
+                next_module += 1;
+
+                module
             }
-        })?;
-        let module_high = u32::from_str(module_high_str).map_err(|err| {
-            Tiled3dAdjacencyRulesImportError::ParseInt {
-                row: i,
-                col: 2,
-                error: err,
+        };
+
+        let module_high = match name_to_module.entry(module_high_str.to_string()) {
+            Entry::Occupied(occupied_entry) => *occupied_entry.get(),
+            Entry::Vacant(vacant_entry) => {
+                let module = NonZeroU32::new(next_module).unwrap();
+                vacant_entry.insert(module);
+                module_to_name.insert(module, module_high_str.to_string());
+
+                next_module += 1;
+
+                module
             }
-        })?;
+        };
 
         adjacencies.push(Tiled3dAdjacency {
             kind: adjacency_kind,
-            module_low,
-            module_high,
+            module_low: module_low,
+            module_high: module_high,
         });
     }
 
-    Ok(adjacencies)
+    Ok(Tiled3dAdjacencyRulesImportResult {
+        adjacencies,
+        name_to_module,
+        module_to_name,
+    })
 }
 
 #[derive(Debug)]
 pub enum Tiled3dInitialStateImportError {
     InvalidHeader,
     DimensionMismatch,
-    UnexpectedModule(u32),
+    UnexpectedModule(String),
     ParseInt {
         line: usize,
         error: num::ParseIntError,
@@ -178,11 +197,11 @@ impl From<io::Error> for Tiled3dInitialStateImportError {
 pub fn import_initial_state<R: io::BufRead>(
     mut r: R,
     dims: [u16; 3],
-    all_module_ids: &HashSet<u32>,
+    name_to_module: &HashMap<String, NonZeroU32>,
 ) -> Result<Vec<TinyVec<[u32; 4]>>, Tiled3dInitialStateImportError> {
     log::info!("Importing initial state text");
 
-    let slot_regex = Regex::new(r"\*|\[([^\]]*)\]").unwrap();
+    let slot_regex = Regex::new(r"\*|\?|\[([^\]]*)\]").unwrap();
     let mut line_buffer = String::with_capacity(1024);
     let mut line = 1;
 
@@ -228,25 +247,26 @@ pub fn import_initial_state<R: io::BufRead>(
 
                 let mut slot: TinyVec<[u32; 4]> = TinyVec::new();
                 match slot_str {
-                    "*" => slot.extend(all_module_ids.iter().copied()),
+                    SLOT_NAME_WILDCARD => {
+                        slot.extend(name_to_module.values().copied().map(NonZeroU32::get))
+                    }
+                    SLOT_NAME_VOID => {
+                        slot.push(0);
+                    }
                     _ => {
                         let slot_str_inner = slot_str.trim_start_matches('[').trim_end_matches(']');
 
                         // Only attempt to parse integers if the cell contains
                         // something else than whitespace.
                         if !slot_str_inner.trim().is_empty() {
-                            for slot_value_str in slot_str_inner.split(',') {
-                                let v = u32::from_str(&slot_value_str.trim()).map_err(|error| {
-                                    Tiled3dInitialStateImportError::ParseInt { line, error }
+                            for name in slot_str_inner.split(',') {
+                                let module = name_to_module.get(name).ok_or_else(|| {
+                                    Tiled3dInitialStateImportError::UnexpectedModule(
+                                        name.to_string(),
+                                    )
                                 })?;
 
-                                if !all_module_ids.contains(&v) {
-                                    return Err(Tiled3dInitialStateImportError::UnexpectedModule(
-                                        v,
-                                    ));
-                                }
-
-                                slot.push(v);
+                                slot.push(module.get());
                             }
                         }
                     }
@@ -269,11 +289,17 @@ pub fn import_initial_state<R: io::BufRead>(
 
 // FIXME: Error handling for writing
 
-pub fn export_tiled_text<W: io::Write>(w: &mut W, dims: [u16; 3], slots: &[TinyVec<[u32; 4]>]) {
+pub fn export_tiled_text<W: io::Write>(
+    w: &mut W,
+    dims: [u16; 3],
+    slots: &[TinyVec<[u32; 4]>],
+    module_to_name: &HashMap<NonZeroU32, String>,
+) {
     assert!(dims[0] > 0);
     assert!(dims[1] > 0);
     assert!(dims[2] > 0);
 
+    // FIXME: Formatting for multichar names
     let largest_slot = slots.iter().fold(0, |max, s| usize::max(max, s.len()));
 
     let mut slot_buffer = String::with_capacity(32);
@@ -293,7 +319,7 @@ pub fn export_tiled_text<W: io::Write>(w: &mut W, dims: [u16; 3], slots: &[TinyV
                     2 + largest_slot + (largest_slot - 1).max(0)
                 };
 
-                write_modules_in_slot(&mut slot_buffer, modules_in_slot);
+                write_modules_in_slot(&mut slot_buffer, modules_in_slot, module_to_name);
                 write!(w, "{:<width$}", slot_buffer.trim_end(), width = slot_width).unwrap();
                 slot_buffer.clear();
             }
@@ -305,18 +331,28 @@ pub fn export_tiled_text<W: io::Write>(w: &mut W, dims: [u16; 3], slots: &[TinyV
     }
 }
 
-fn write_modules_in_slot<W: fmt::Write>(w: &mut W, modules_in_slot: &[u32]) {
-    write!(w, "[").unwrap();
+fn write_modules_in_slot<W: fmt::Write>(
+    w: &mut W,
+    modules_in_slot: &[u32],
+    module_to_name: &HashMap<NonZeroU32, String>,
+) {
+    if modules_in_slot.len() == 1 && modules_in_slot[0] == 0 {
+        write!(w, " {} ", SLOT_NAME_VOID).unwrap();
+    } else {
+        write!(w, "[").unwrap();
 
-    let mut first = true;
-    for module in modules_in_slot {
-        if first {
-            write!(w, "{}", module).unwrap();
-            first = false;
-        } else {
-            write!(w, ",{}", module).unwrap();
+        let mut first = true;
+        for module in modules_in_slot {
+            let name = &module_to_name[&NonZeroU32::new(*module).unwrap()];
+
+            if first {
+                write!(w, "{}", name).unwrap();
+                first = false;
+            } else {
+                write!(w, ",{}", name).unwrap();
+            }
         }
-    }
 
-    write!(w, "]").unwrap();
+        write!(w, "]").unwrap();
+    }
 }

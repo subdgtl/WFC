@@ -15,7 +15,6 @@ mod tiled2d_wfc;
 mod tiled3d_text_io;
 mod tiled3d_wfc;
 
-use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write as _};
@@ -25,7 +24,6 @@ use std::time::SystemTime;
 
 use clap::Clap as _;
 use rand::SeedableRng as _;
-use tinyvec::ArrayVec;
 
 use crate::tiled2d_image_io::Tiled2dImageImportOptions;
 use crate::tiled2d_wfc::{Tiled2dObserveResult, Tiled2dWorld};
@@ -286,18 +284,27 @@ fn run_tiled3d_text(
         }
     };
 
-    let adjacencies = match tiled3d_text_io::import_adjacency_rules(input_file) {
-        Ok(adjacencies) => adjacencies,
+    let import_result = match tiled3d_text_io::import_adjacency_rules(input_file) {
+        Ok(import_result) => import_result,
         Err(err) => {
             eprintln!("Failed to extract adjacency rules from text: {}", err);
             process::exit(1);
         }
     };
 
-    eprintln!("Found {} adjacency rules:", adjacencies.len());
-    for adjacency in &adjacencies {
-        eprintln!("{}", adjacency);
+    eprintln!("Found {} modules:", import_result.name_to_module.len());
+    for (name, module) in &import_result.name_to_module {
+        eprintln!("{:<10} (internal id = {})", name, module);
     }
+    eprintln!("----------------------------------------");
+
+    eprintln!("Found {} adjacency rules:", import_result.adjacencies.len());
+    for adjacency in &import_result.adjacencies {
+        let low = &import_result.module_to_name[&adjacency.module_low];
+        let high = &import_result.module_to_name[&adjacency.module_high];
+        eprintln!("{:?}    {:<10} {:<10}", adjacency.kind, low, high);
+    }
+    eprintln!("----------------------------------------");
 
     let dims = [options.x_size, options.y_size, options.z_size];
 
@@ -311,27 +318,25 @@ fn run_tiled3d_text(
             }
         };
 
-        let all_module_ids: HashSet<u32> = adjacencies
-            .iter()
-            .flat_map(|adj| ArrayVec::from([adj.module_low, adj.module_high]).into_iter())
-            .collect();
-
         let buf_reader = BufReader::new(initial_state_file);
-        let initial_state =
-            match tiled3d_text_io::import_initial_state(buf_reader, dims, &all_module_ids) {
-                Ok(initial_state) => initial_state,
-                Err(err) => {
-                    eprintln!("Failed to extract initial state from text: {}", err);
-                    process::exit(1);
-                }
-            };
+        let initial_state = match tiled3d_text_io::import_initial_state(
+            buf_reader,
+            dims,
+            &import_result.name_to_module,
+        ) {
+            Ok(initial_state) => initial_state,
+            Err(err) => {
+                eprintln!("Failed to extract initial state from text: {}", err);
+                process::exit(1);
+            }
+        };
 
         Some(initial_state)
     } else {
         None
     };
 
-    let mut world = Tiled3dWorld::new(dims, adjacencies, wrapping);
+    let mut world = Tiled3dWorld::new(dims, import_result.adjacencies, wrapping);
 
     let mut found_deterministic_result = false;
     let mut attempts = 0;
@@ -416,6 +421,7 @@ fn run_tiled3d_text(
         &mut output_writer,
         [options.x_size, options.y_size, options.z_size],
         &slots,
+        &import_result.module_to_name,
     );
 
     match output_writer.flush() {

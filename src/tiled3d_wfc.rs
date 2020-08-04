@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
+use std::num::NonZeroU32;
 
 // FIXME: hibitset::Bitset is quite a lot of overhead if we don't utilize its
 // dynamic memory. We could make a `SmallBitSet` which doesn't dynamically
@@ -33,18 +34,8 @@ impl From<Direction> for Tiled3dAdjacencyKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Tiled3dAdjacency {
     pub kind: Tiled3dAdjacencyKind,
-    pub module_low: u32,
-    pub module_high: u32,
-}
-
-impl fmt::Display for Tiled3dAdjacency {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{:?} {:>4} {:>4}",
-            self.kind, self.module_low, self.module_high,
-        )
-    }
+    pub module_low: NonZeroU32,
+    pub module_high: NonZeroU32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,7 +91,7 @@ pub enum Tiled3dObserveResult {
 impl fmt::Display for Tiled3dObserveResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Nondeterministic => write!(f, "non-determinsitic"),
+            Self::Nondeterministic => write!(f, "non-deterministic"),
             Self::Deterministic => write!(f, "deterministic"),
             Self::Contradiction => write!(f, "contradiction"),
         }
@@ -129,24 +120,34 @@ impl Tiled3dWorld {
         let mut module_max = 0;
 
         for adjacency in &adjacencies {
-            if !modules.add(adjacency.module_low) {
+            if !modules.add(adjacency.module_low.get()) {
                 module_count += 1;
             }
-            if !modules.add(adjacency.module_high) {
+            if !modules.add(adjacency.module_high.get()) {
                 module_count += 1;
             }
 
-            if adjacency.module_low > module_max {
-                module_max = adjacency.module_low;
+            if adjacency.module_low.get() > module_max {
+                module_max = adjacency.module_low.get();
             }
-            if adjacency.module_high > module_max {
-                module_max = adjacency.module_high;
+            if adjacency.module_high.get() > module_max {
+                module_max = adjacency.module_high.get();
             }
         }
 
+        // This assert shouldn't be possible to break if the importer works
+        // correctly. The importer should intern names to sequentially
+        // allocated numbers AND starts the id sequence at 1 (0 is reserved for
+        // the void module).
         assert!(
-            module_count == module_max + 1,
+            module_count == module_max,
             "No gaps in module indices allowed",
+        );
+
+        assert_eq!(
+            modules.contains(0),
+            false,
+            "The 0-th module is reserved and cannot be set implicitly",
         );
 
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
@@ -175,9 +176,15 @@ impl Tiled3dWorld {
 
     pub fn reset(&mut self) {
         for slot in &mut self.slots {
-            for i in 0..self.module_count {
+            for i in 1..self.module_count {
                 slot.add(i);
             }
+
+            assert_eq!(
+                slot.contains(0),
+                false,
+                "The 0-th module is reserved and cannot be set implicitly",
+            );
         }
     }
 
@@ -185,6 +192,15 @@ impl Tiled3dWorld {
         assert_eq!(self.slots.len(), initial_state.len());
 
         for (i, slot) in self.slots.iter_mut().enumerate() {
+            let initial_state_is_void = initial_state[i].contains(&0);
+            if initial_state_is_void {
+                assert_eq!(
+                    initial_state[i].len(),
+                    1,
+                    "Slots initialized with the void module  must not contain other modules",
+                );
+            }
+
             slot.clear();
 
             for module in &initial_state[i] {
@@ -274,18 +290,18 @@ impl Tiled3dWorld {
                             })
                             .filter(|adj| {
                                 if s.search_direction.is_positive() {
-                                    slot_prev.contains(adj.module_low)
-                                        && slot.contains(adj.module_high)
+                                    slot_prev.contains(adj.module_low.get())
+                                        && slot.contains(adj.module_high.get())
                                 } else {
-                                    slot_prev.contains(adj.module_high)
-                                        && slot.contains(adj.module_low)
+                                    slot_prev.contains(adj.module_high.get())
+                                        && slot.contains(adj.module_low.get())
                                 }
                             })
                         {
                             if s.search_direction.is_positive() {
-                                new_slot.add(adj.module_high);
+                                new_slot.add(adj.module_high.get());
                             } else {
-                                new_slot.add(adj.module_low);
+                                new_slot.add(adj.module_low.get());
                             }
                         }
 
@@ -328,10 +344,14 @@ impl Tiled3dWorld {
                         s.search_state = SearchState::SearchRight;
 
                         if pos != pos_next {
-                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                             log::debug!("LEFT  {:>3?} {:>3?}", pos, pos_next);
 
-                            if !visited.contains(&slot_index_next) {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            let slot_next = &self.slots[slot_index_next];
+
+                            // Only propagate if we didn't visit yet AND the
+                            // slot is not a void slot
+                            if !visited.contains(&slot_index_next) && !slot_next.contains(0) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
                                     search_direction: Direction::Left,
@@ -353,10 +373,14 @@ impl Tiled3dWorld {
                         s.search_state = SearchState::SearchFront;
 
                         if pos != pos_next {
-                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                             log::debug!("RIGHT {:>3?} {:>3?}", pos, pos_next);
 
-                            if !visited.contains(&slot_index_next) {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            let slot_next = &self.slots[slot_index_next];
+
+                            // Only propagate if we didn't visit yet AND the
+                            // slot is not a void slot
+                            if !visited.contains(&slot_index_next) && !slot_next.contains(0) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
                                     search_direction: Direction::Right,
@@ -378,10 +402,14 @@ impl Tiled3dWorld {
                         s.search_state = SearchState::SearchBack;
 
                         if pos != pos_next {
-                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                             log::debug!("FRONT {:>3?} {:>3?}", pos, pos_next);
 
-                            if !visited.contains(&slot_index_next) {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            let slot_next = &self.slots[slot_index_next];
+
+                            // Only propagate if we didn't visit yet AND the
+                            // slot is not a void slot
+                            if !visited.contains(&slot_index_next) && !slot_next.contains(0) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
                                     search_direction: Direction::Front,
@@ -403,10 +431,14 @@ impl Tiled3dWorld {
                         s.search_state = SearchState::SearchDown;
 
                         if pos != pos_next {
-                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                             log::debug!("BACK  {:>3?} {:>3?}", pos, pos_next);
 
-                            if !visited.contains(&slot_index_next) {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            let slot_next = &self.slots[slot_index_next];
+
+                            // Only propagate if we didn't visit yet AND the
+                            // slot is not a void slot
+                            if !visited.contains(&slot_index_next) && !slot_next.contains(0) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
                                     search_direction: Direction::Back,
@@ -428,10 +460,14 @@ impl Tiled3dWorld {
                         s.search_state = SearchState::SearchUp;
 
                         if pos != pos_next {
-                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                             log::debug!("DOWN  {:>3?} {:>3?}", pos, pos_next);
 
-                            if !visited.contains(&slot_index_next) {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            let slot_next = &self.slots[slot_index_next];
+
+                            // Only propagate if we didn't visit yet AND the
+                            // slot is not a void slot
+                            if !visited.contains(&slot_index_next) && !slot_next.contains(0) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
                                     search_direction: Direction::Down,
@@ -453,10 +489,14 @@ impl Tiled3dWorld {
                         s.search_state = SearchState::Done;
 
                         if pos != pos_next {
-                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                             log::debug!("UP    {:>3?} {:>3?}", pos, pos_next);
 
-                            if !visited.contains(&slot_index_next) {
+                            let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                            let slot_next = &self.slots[slot_index_next];
+
+                            // Only propagate if we didn't visit yet AND the
+                            // slot is not a void slot
+                            if !visited.contains(&slot_index_next) && !slot_next.contains(0) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
                                     search_direction: Direction::Up,
