@@ -197,7 +197,7 @@ impl Tiled3dWorld {
                 assert_eq!(
                     initial_state[i].len(),
                     1,
-                    "Slots initialized with the void module  must not contain other modules",
+                    "Slots initialized with the void module must not contain other modules",
                 );
             }
 

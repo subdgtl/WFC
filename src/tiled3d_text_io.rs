@@ -140,8 +140,8 @@ pub fn import_adjacency_rules<R: io::Read>(
 
         adjacencies.push(Tiled3dAdjacency {
             kind: adjacency_kind,
-            module_low: module_low,
-            module_high: module_high,
+            module_low,
+            module_high,
         });
     }
 
