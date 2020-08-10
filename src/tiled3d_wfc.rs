@@ -176,7 +176,7 @@ impl Tiled3dWorld {
 
     pub fn reset(&mut self) {
         for slot in &mut self.slots {
-            for i in 1..self.module_count {
+            for i in 1..=self.module_count {
                 slot.add(i);
             }
 
