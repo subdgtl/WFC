@@ -20,7 +20,6 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Write as _};
 use std::path::Path;
 use std::process;
-use std::time::SystemTime;
 
 use clap::Clap as _;
 use rand::SeedableRng as _;
@@ -213,11 +212,6 @@ fn run_tiled2d_image(
         attempts += 1;
     }
 
-    let time_finished = SystemTime::now();
-    let time_since_epoch = time_finished
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap();
-
     let output_file_path = input_file_path.with_file_name(format!(
         "{}_{}_{}.png",
         input_file_stem.to_string_lossy(),
@@ -226,7 +220,7 @@ fn run_tiled2d_image(
         } else {
             "contradiction"
         },
-        time_since_epoch.as_secs()
+        chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"),
     ));
 
     eprintln!("Exporting result to {}", output_file_path.to_string_lossy());
@@ -389,11 +383,6 @@ fn run_tiled3d_text(
         attempts += 1;
     }
 
-    let time_finished = SystemTime::now();
-    let time_since_epoch = time_finished
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap();
-
     let output_file_path = input_file_path.with_file_name(format!(
         "{}_{}_{}.txt",
         input_file_stem.to_string_lossy(),
@@ -402,7 +391,7 @@ fn run_tiled3d_text(
         } else {
             "contradiction"
         },
-        time_since_epoch.as_secs()
+        chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"),
     ));
 
     eprintln!("Exporting result to {}", output_file_path.to_string_lossy());
