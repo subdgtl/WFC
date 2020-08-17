@@ -1,0 +1,13 @@
+[package]
+name = "wfc_dylib"
+version = "0.1.0"
+authors = ["yanchith <yanchi.toth@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "wfc"
+crate-type = ["cdylib"]
+
+[dependencies]
+rand_pcg = "0.2.1"
+wfc_core = { path = "../wfc_core" }

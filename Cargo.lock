@@ -664,20 +664,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cccddf32554fecc6acb585f82a32a72e28b48f8c4c1883ddfeeeaa96f7d8e519"
 
 [[package]]
-name = "wfc1"
+name = "wfc_cli"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
  "csv",
  "env_logger",
+ "log",
+ "rand_pcg",
+ "regex",
+ "tinyvec",
+ "wfc_core",
+]
+
+[[package]]
+name = "wfc_core"
+version = "0.1.0"
+dependencies = [
  "hibitset",
  "log",
  "png",
  "rand",
+]
+
+[[package]]
+name = "wfc_dylib"
+version = "0.1.0"
+dependencies = [
  "rand_pcg",
- "regex",
- "tinyvec",
+ "wfc_core",
 ]
 
 [[package]]
