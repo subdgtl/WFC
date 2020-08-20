@@ -111,7 +111,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             throw new ArgumentException("Must supply at least one adjacency rule");
         }
 
-        UInt32 nextModule = 1;
+        UInt32 nextModule = 0;
         Dictionary<string, UInt32> nameToModule = new Dictionary<string, UInt32>();
         Dictionary<UInt32, string> moduleToName = new Dictionary<UInt32, string>();
         AdjacencyRule[] adjacencyRules = new AdjacencyRule[minCount];
@@ -235,8 +235,6 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                     case WfcInitResult.Ok:
                         // All good
                         break;
-                    case WfcInitResult.RulesContainVoidModule:
-                        throw new ArgumentException("WFC solver failed: Adjacency rules contained a void");
                     case WfcInitResult.TooManyModules:
                         throw new ArgumentException("WFC solver failed: Adjacency rules contained too many modules");
                     case WfcInitResult.WorldDimensionsZero:
@@ -275,10 +273,10 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         foreach (SlotState slotState in worldState)
         {
             // Assume the result is deterministic and only take the first set bit
-            UInt32 module = 0;
-            for (int blkIdx = 0; blkIdx < 8 && module == 0; ++blkIdx)
+            Int64 module = Int64.MinValue;
+            for (int blkIdx = 0; blkIdx < 8 && module == Int64.MinValue; ++blkIdx)
             {
-                for (int bitIdx = 0; bitIdx < 64 && module == 0; ++bitIdx)
+                for (int bitIdx = 0; bitIdx < 64 && module == Int64.MinValue; ++bitIdx)
                 {
                     UInt64 mask = (UInt64)1 << bitIdx;
                     unsafe
@@ -292,7 +290,10 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             }
 
             string name = "<unknown>";
-            moduleToName.TryGetValue(module, out name);
+            if (module >= 0)
+            {
+                moduleToName.TryGetValue((UInt32)module, out name);
+            }
             worldStateOutput.Add(name);
         }
 
@@ -331,8 +332,7 @@ internal enum WfcInitResult : UInt32
 {
     Ok = 0,
     TooManyModules = 1,
-    RulesContainVoidModule = 2,
-    WorldDimensionsZero = 3,
+    WorldDimensionsZero = 2,
 }
 
 [StructLayout(LayoutKind.Sequential)]

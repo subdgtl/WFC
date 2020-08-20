@@ -1,9 +1,9 @@
 10 10 10
 
 [pipe_y][pipe_z][pipe_z][pipe_y][pipe_z][pipe_y][pipe_z][pipe_y][pipe_y][pipe_y]
-[cross] ? ? ? ? ? ? ? ? [cross]
-[cross] ? * * * * * * ?  [cross]
-[pipe_y] ? ? ? ? ? ? ? ? [pipe_y]
+[cross] * * * * * * * * [cross]
+[cross] * * * * * * * *  [cross]
+[pipe_y] * * * * * * * * [pipe_y]
 [cross][pipe_x][pipe_x][cross][pipe_x][cross][pipe_x][cross][cross][cross]
 [cross][pipe_x][pipe_x][cross][pipe_x][cross][pipe_x][cross][cross][cross]
 [cross][pipe_x][pipe_x][cross][pipe_x][cross][pipe_x][cross][cross][cross]
@@ -13,7 +13,7 @@
 
 [pipe_x][cross][cross][pipe_x][cross][pipe_x][cross][pipe_x][pipe_x][pipe_x]
 [pipe_z][pipe_y][pipe_y][pipe_z][pipe_y][pipe_z][pipe_y][pipe_z][pipe_z][pipe_z]
-[pipe_z] ? ? ? ? ? ? ? ? [pipe_z]
+[pipe_z] * * * * * * * * [pipe_z]
 [pipe_x][cross][cross][pipe_x][cross][pipe_x][cross][pipe_x][pipe_x][pipe_x]
 [pipe_z][pipe_y][pipe_y][pipe_z][pipe_y][pipe_z][pipe_y][pipe_z][pipe_z][pipe_z]
 [pipe_z][pipe_y][pipe_y][pipe_z][pipe_y][pipe_z][pipe_y][pipe_z][pipe_z][pipe_z]

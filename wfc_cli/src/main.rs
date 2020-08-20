@@ -119,6 +119,13 @@ fn main() {
             process::exit(1);
         };
 
+        // Since we are importing a custom world state, we can not be sure all
+        // adjacency rule constraints are initially satisfied.
+        let world_changed = world.ensure_constraints();
+        if world_changed {
+            eprintln!("WARNING: Provided world state does not initially satisfy adjacency rules");
+        }
+
         world
     } else {
         World::new(dims, import_result.adjacencies)

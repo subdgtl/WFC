@@ -12,8 +12,7 @@ enum class AdjacencyRuleKind : uint32_t {
 enum class WfcInitResult : uint32_t {
   Ok = 0,
   TooManyModules = 1,
-  RulesContainVoidModule = 2,
-  WorldDimensionsZero = 3,
+  WorldDimensionsZero = 2,
 };
 
 struct WfcState;
@@ -40,9 +39,9 @@ extern "C" {
 void wfc_free(Wfc wfc);
 
 /// Initializes Wave Function Collapse state with adjacency rules. The world
-/// gets initialized with every module possible in every slot and no voids.
+/// gets initialized with every module possible in every slot.
 ///
-/// To change slots to voids or change the world state, use
+/// To change the world state to a different configuration, use
 /// `wfc_world_state_set`.
 ///
 /// # Safety
@@ -82,9 +81,8 @@ uint32_t wfc_observe(Wfc wfc, uint32_t max_attempts);
 /// `world_state_len`.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 1st and 3rd bits set will contain
-/// modules with ids 1 and 3. The 0th bit is reserved to denote the module is
-/// void and is exclusive with all other set bits.
+/// present at that slot, e.g. a module with 0th and 2nd bits set will contain
+/// modules with ids 0 and 2.
 ///
 /// The bit vectors of state are stored in a three dimensional array (compacted
 /// in a one dimensional array). To get to a slot state on position `[x, y, z]`,
@@ -117,10 +115,8 @@ void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[8], uintptr_t worl
 /// provided handle.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 1st and 3rd bits set will contain
-/// modules with ids 1 and 3. The 0th bit is reserved to denote the module is
-/// void and is exclusive with all other set bits. It is a usage error to set
-/// both the 0th bit and any other bit.
+/// present at that slot, e.g. a module with 0th and 2nd bits set will contain
+/// modules with ids 0 and 2.
 ///
 /// Currently does not validate against setting bits higher than the module
 /// count, but it is a usage error to do so.

@@ -1,7 +1,6 @@
 mod convert;
 
 use std::mem;
-use std::num::NonZeroU32;
 use std::slice;
 use std::sync::Mutex;
 
@@ -10,16 +9,13 @@ use wfc_core::{self, Adjacency, AdjacencyKind, ObserveResult, World};
 
 use crate::convert::{cast_u32, cast_usize};
 
-// FIXME: Make the `Wfc` a proper opaque handle and store the states in an
-// array. https://floooh.github.io/2018/06/17/handles-vs-pointers.html
+// FIXME: Adjacency and AdjacencyKind are duplicated here only because otherwise
+// cbindgen can't find them easily in wfc_core. cbindgen could possbily be
+// configured to crawl certain allowed types in dependencies only, without
+// bringing over too much stuff.
 
-// Maximum number of modules supported to be sent with `wfc_world_state_get` and
-// `wfc_world_state_set`. Sub 1 b/c because the void module occupies the first
-// bit and voids don't count as modules.
-const MAX_MODULE_COUNT: usize = mem::size_of::<[u64; 8]>() * 8 - 1;
-
-#[derive(Clone, Copy)]
 #[repr(u32)]
+#[derive(Clone, Copy)]
 pub enum AdjacencyRuleKind {
     X = 0,
     Y = 1,
@@ -43,6 +39,23 @@ pub struct AdjacencyRule {
     pub module_low: u32,
     pub module_high: u32,
 }
+
+impl Into<Adjacency> for AdjacencyRule {
+    fn into(self) -> Adjacency {
+        Adjacency {
+            kind: self.kind.into(),
+            module_low: self.module_low,
+            module_high: self.module_high,
+        }
+    }
+}
+
+/// Maximum number of modules supported to be sent with `wfc_world_state_get`
+/// and `wfc_world_state_set`.
+const MAX_MODULE_COUNT: usize = mem::size_of::<[u64; 8]>() * 8;
+
+// FIXME: Make the `Wfc` a proper opaque handle and store the states in an
+// array. https://floooh.github.io/2018/06/17/handles-vs-pointers.html
 
 /// An opaque handle to `WfcState`. Actually a pointer, but shhh!
 #[repr(transparent)]
@@ -84,14 +97,13 @@ impl WfcStateInner {
 pub enum WfcInitResult {
     Ok = 0,
     TooManyModules = 1,
-    RulesContainVoidModule = 2,
-    WorldDimensionsZero = 3,
+    WorldDimensionsZero = 2,
 }
 
 /// Initializes Wave Function Collapse state with adjacency rules. The world
-/// gets initialized with every module possible in every slot and no voids.
+/// gets initialized with every module possible in every slot.
 ///
-/// To change slots to voids or change the world state, use
+/// To change the world state to a different configuration, use
 /// `wfc_world_state_set`.
 ///
 /// # Safety
@@ -119,25 +131,14 @@ pub unsafe extern "C" fn wfc_init(
         slice::from_raw_parts(adjacency_rules_ptr, adjacency_rules_len)
     };
 
-    let mut adjacencies: Vec<Adjacency> = Vec::with_capacity(adjacency_rules.len());
-    for adjacency_rule in adjacency_rules {
-        if adjacency_rule.module_low == 0 || adjacency_rule.module_high == 0 {
-            return WfcInitResult::RulesContainVoidModule;
-        }
-
-        let adjacency = Adjacency {
-            kind: adjacency_rule.kind.into(),
-            module_low: NonZeroU32::new(adjacency_rule.module_low).unwrap(),
-            module_high: NonZeroU32::new(adjacency_rule.module_high).unwrap(),
-        };
-
-        adjacencies.push(adjacency);
-    }
-
     if world_x == 0 || world_y == 0 || world_z == 0 {
         return WfcInitResult::WorldDimensionsZero;
     }
 
+    let adjacencies = adjacency_rules
+        .iter()
+        .map(|adjacency_rule| (*adjacency_rule).into())
+        .collect();
     let world_initial = World::new([world_x, world_y, world_z], adjacencies);
 
     if world_initial.module_count() > MAX_MODULE_COUNT {
@@ -242,10 +243,8 @@ pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
 /// provided handle.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 1st and 3rd bits set will contain
-/// modules with ids 1 and 3. The 0th bit is reserved to denote the module is
-/// void and is exclusive with all other set bits. It is a usage error to set
-/// both the 0th bit and any other bit.
+/// present at that slot, e.g. a module with 0th and 2nd bits set will contain
+/// modules with ids 0 and 2.
 ///
 /// Currently does not validate against setting bits higher than the module
 /// count, but it is a usage error to do so.
@@ -297,6 +296,11 @@ pub unsafe extern "C" fn wfc_world_state_set(
     let (world_initial, world, _) = wfc_state_guard.fields_mut();
 
     import_world_state(world_initial, world_state);
+
+    // Since we are importing a custom world state, we can not be sure all
+    // adjacency rule constraints are initially satisfied.
+    world_initial.ensure_constraints();
+
     // Clone eagerly so that if someone calls `wfc_world_state_get` immediately
     // after without observing first, they get back the state that was set.
     world.clone_from(world_initial);
@@ -306,9 +310,8 @@ pub unsafe extern "C" fn wfc_world_state_set(
 /// `world_state_len`.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 1st and 3rd bits set will contain
-/// modules with ids 1 and 3. The 0th bit is reserved to denote the module is
-/// void and is exclusive with all other set bits.
+/// present at that slot, e.g. a module with 0th and 2nd bits set will contain
+/// modules with ids 0 and 2.
 ///
 /// The bit vectors of state are stored in a three dimensional array (compacted
 /// in a one dimensional array). To get to a slot state on position `[x, y, z]`,
@@ -371,7 +374,6 @@ fn import_world_state(world: &mut World, world_state: &[[u64; 8]]) {
 }
 
 fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 8]) {
-    world.set_slot_void(pos, false);
     world.set_slot_modules(pos, false);
 
     for (blk_index, blk) in slot_state.iter().enumerate() {
@@ -380,11 +382,7 @@ fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 8]) {
             let value = blk & (1 << bit_index);
 
             if value != 0 {
-                if module == 0 {
-                    world.set_slot_void(pos, true);
-                } else {
-                    world.set_slot_module(pos, NonZeroU32::new(cast_u32(module)).unwrap(), true);
-                }
+                world.set_slot_module(pos, cast_u32(module), true);
             }
         }
     }
