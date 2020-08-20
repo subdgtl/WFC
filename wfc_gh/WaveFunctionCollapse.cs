@@ -338,7 +338,7 @@ internal enum WfcInitResult : UInt32
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct SlotState
 {
-    public fixed ulong slot_state[8];
+    public fixed UInt64 slot_state[8];
 }
 
 internal struct Stats
