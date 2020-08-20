@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using Grasshopper.Kernel;
 
 public class GH_WaveFunctionCollapse3D : GH_Component
@@ -48,6 +49,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
     {
+        pManager.AddTextParameter("out", "O", "Debug output", GH_ParamAccess.item);
         pManager.AddTextParameter("World state",
                                   "W",
                                   "State of the world once the wave function has collapsed",
@@ -67,10 +69,17 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         DA.GetData("World Y", ref worldYInt);
         DA.GetData("World Z", ref worldZInt);
 
-        if (worldXInt <= 0 || worldYInt <= 0 || worldZInt <= 0)
+        if (worldXInt <= 0)
         {
-            DA.SetDataList("World state", null);
-            return;
+            throw new ArgumentException("World X must be a positive integer");
+        }
+        if (worldYInt <= 0)
+        {
+            throw new ArgumentException("World Y must be a positive integer");
+        }
+        if (worldZInt <= 0)
+        {
+            throw new ArgumentException("World Z must be a positive integer");
         }
 
         UInt16 worldX = (UInt16)worldXInt;
@@ -94,17 +103,17 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         DA.GetDataList("Rule low", adjacencyRulesModuleLow);
         DA.GetDataList("Rule high", adjacencyRulesModuleHigh);
 
-        var minCount = Math.Min(Math.Min(adjacencyRulesAxis.Count, adjacencyRulesModuleLow.Count),
-                                adjacencyRulesModuleHigh.Count);
+        Int32 minCount = Math.Min(Math.Min(adjacencyRulesAxis.Count, adjacencyRulesModuleLow.Count),
+                                  adjacencyRulesModuleHigh.Count);
+
         if (minCount == 0)
         {
-            DA.SetDataList("World state", null);
-            return;
+            throw new ArgumentException("Must supply at least one adjacency rule");
         }
 
         UInt32 nextModule = 1;
-        Dictionary<string, UInt32> nameToModule = new Dictionary<string, uint>();
-        Dictionary<UInt32, string> moduleToName = new Dictionary<uint, string>();
+        Dictionary<string, UInt32> nameToModule = new Dictionary<string, UInt32>();
+        Dictionary<UInt32, string> moduleToName = new Dictionary<UInt32, string>();
         AdjacencyRule[] adjacencyRules = new AdjacencyRule[minCount];
 
         for (int i = 0; i < minCount; ++i)
@@ -221,19 +230,27 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                                                            worldZ,
                                                            rngSeed);
 
-                if (initResult != WfcInitResult.Ok)
+                switch (initResult)
                 {
-                    DA.SetDataList("World state", null);
-                    return;
+                    case WfcInitResult.Ok:
+                        // All good
+                        break;
+                    case WfcInitResult.RulesContainVoidModule:
+                        throw new ArgumentException("WFC solver failed: Adjacency rules contained a void");
+                    case WfcInitResult.TooManyModules:
+                        throw new ArgumentException("WFC solver failed: Adjacency rules contained too many modules");
+                    case WfcInitResult.WorldDimensionsZero:
+                        throw new ArgumentException("WFC solver failed: World dimensions are zero");
+                    default:
+                        throw new ArgumentException("WFC solver failed with unknown error");
                 }
             }
         }
 
-        UInt32 observeResult = Native.wfc_observe(wfc, maxAttempts);
-        if (observeResult == 0)
+        UInt32 attempts = Native.wfc_observe(wfc, maxAttempts);
+        if (attempts == 0)
         {
-            DA.SetDataList("World state", null);
-            return;
+            throw new ArgumentException("WFC solver failed to find solution within " + maxAttempts + " attempts");
         }
 
         unsafe
@@ -279,6 +296,12 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             worldStateOutput.Add(name);
         }
 
+        Stats stats;
+        stats.ruleCount = (UInt32)minCount;
+        stats.moduleCount = (UInt32)moduleToName.Count;
+        stats.solveAttempts = attempts;
+
+        DA.SetData("out", stats.ToString());
         DA.SetDataList("World state", worldStateOutput);
     }
 }
@@ -304,18 +327,42 @@ internal unsafe struct RngSeed
     public fixed byte rng_seed[16];
 }
 
-[StructLayout(LayoutKind.Sequential)]
-internal unsafe struct SlotState
-{
-    public fixed ulong slot_state[8];
-}
-
 internal enum WfcInitResult : UInt32
 {
     Ok = 0,
     TooManyModules = 1,
     RulesContainVoidModule = 2,
     WorldDimensionsZero = 3,
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct SlotState
+{
+    public fixed ulong slot_state[8];
+}
+
+internal struct Stats
+{
+    public UInt32 ruleCount;
+    public UInt32 moduleCount;
+    public UInt32 solveAttempts;
+
+    public override string ToString()
+    {
+        StringBuilder b = new StringBuilder(128);
+
+        b.Append("Rule count: ");
+        b.Append(ruleCount);
+        b.AppendLine();
+        b.Append("Module count: ");
+        b.Append(moduleCount);
+        b.AppendLine();
+        b.Append("Solve attempts: ");
+        b.Append(solveAttempts);
+        b.AppendLine();
+
+        return b.ToString();
+    }
 }
 
 internal class Native
