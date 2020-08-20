@@ -202,7 +202,7 @@ impl World {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &mut self.slots[index];
 
-        for module in 0..=cast_u32(self.module_count) {
+        for module in 0..cast_u32(self.module_count) {
             if value {
                 slot.add(module);
             } else {
@@ -222,7 +222,7 @@ impl World {
     /// to contain any module.
     pub fn reset(&mut self) {
         for slot in &mut self.slots {
-            for module in 0..=cast_u32(self.module_count) {
+            for module in 0..cast_u32(self.module_count) {
                 slot.add(module);
             }
         }
