@@ -2,10 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using Grasshopper;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Data;
 
 public class GH_WaveFunctionCollapse3D : GH_Component
 {
+
+    private const Int32 OUT_PARAM_DEBUG_OUTPUT = 0;
+    private const Int32 OUT_PARAM_WORLD_STATE = 1;
     public GH_WaveFunctionCollapse3D() : base("Wave Function Collapse 3D",
                                               "WFC3",
                                               "Solver for the Wave Function Collapse algorithm in cubic voxel space",
@@ -49,11 +54,11 @@ public class GH_WaveFunctionCollapse3D : GH_Component
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
     {
-        pManager.AddTextParameter("out", "O", "Debug output", GH_ParamAccess.item);
+        pManager.AddTextParameter("Debug output", "O", "Debug output and metrics", GH_ParamAccess.item);
         pManager.AddTextParameter("World state",
                                   "W",
                                   "State of the world once the wave function has collapsed",
-                                  GH_ParamAccess.list);
+                                  GH_ParamAccess.tree);
     }
 
     protected override void SolveInstance(IGH_DataAccess DA)
@@ -269,14 +274,16 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         // early-out on nondeterministic results, we can assume exactly one bit
         // being set here and can therefore produce a flat list on output.
 
-        List<string> worldStateOutput = new List<string>(worldX * worldY * worldZ);
+        DataTree<string> worldStateOutput = new DataTree<string>();
+
+        Int32 branchIndex = 0;
         foreach (SlotState slotState in worldState)
         {
             // Assume the result is deterministic and only take the first set bit
             Int64 module = Int64.MinValue;
-            for (int blkIdx = 0; blkIdx < 8 && module == Int64.MinValue; ++blkIdx)
+            for (Int32 blkIdx = 0; blkIdx < 8 && module == Int64.MinValue; ++blkIdx)
             {
-                for (int bitIdx = 0; bitIdx < 64 && module == Int64.MinValue; ++bitIdx)
+                for (Int32 bitIdx = 0; bitIdx < 64 && module == Int64.MinValue; ++bitIdx)
                 {
                     UInt64 mask = (UInt64)1 << bitIdx;
                     unsafe
@@ -294,7 +301,11 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             {
                 moduleToName.TryGetValue((UInt32)module, out name);
             }
-            worldStateOutput.Add(name);
+
+            GH_Path branchPath = new GH_Path(branchIndex);
+            worldStateOutput.Add(name, branchPath);
+
+            branchIndex++;
         }
 
         Stats stats;
@@ -302,8 +313,8 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         stats.moduleCount = (UInt32)moduleToName.Count;
         stats.solveAttempts = attempts;
 
-        DA.SetData("out", stats.ToString());
-        DA.SetDataList("World state", worldStateOutput);
+        DA.SetData(OUT_PARAM_DEBUG_OUTPUT, stats.ToString());
+        DA.SetDataTree(OUT_PARAM_WORLD_STATE, worldStateOutput);
     }
 }
 
