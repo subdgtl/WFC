@@ -10,7 +10,7 @@ use std::process;
 
 use clap::Clap as _;
 use wfc_core::rand::SeedableRng as _;
-use wfc_core::{ObserveResult, World};
+use wfc_core::{World, WorldStatus};
 
 // This is the same random seed wfc_gh will produce for its default seed.
 const DEFAULT_RANDOM_SEED: u128 = u128::from_le_bytes([
@@ -121,9 +121,20 @@ fn main() {
 
         // Since we are importing a custom world state, we can not be sure all
         // adjacency rule constraints are initially satisfied.
-        let world_changed = world.ensure_constraints();
+        let (world_changed, world_status) = world.ensure_constraints();
+
         if world_changed {
             eprintln!("WARNING: Provided world state does not initially satisfy adjacency rules");
+        }
+
+        if world_status == WorldStatus::Deterministic {
+            eprintln!("World is already deterministic");
+            process::exit(1);
+        }
+
+        if world_status == WorldStatus::Contradiction {
+            eprintln!("World is contradictory");
+            process::exit(1);
         }
 
         world
@@ -140,40 +151,40 @@ fn main() {
 
         world.clone_from(&initial_world);
 
-        let result = loop {
-            let result = world.observe(&mut rng);
+        let status = loop {
+            let (_, status) = world.observe(&mut rng);
 
-            match result {
-                ObserveResult::Nondeterministic => {
+            match status {
+                WorldStatus::Nondeterministic => {
                     if observations % 100 == 0 {
                         eprintln!(
                             "attempt: {:>4}, observation: {:>4}, {} (In progress)",
-                            attempts, observations, result,
+                            attempts, observations, status,
                         );
                     }
                 }
-                ObserveResult::Deterministic => {
+                WorldStatus::Deterministic => {
                     eprintln!(
                         "attempt: {:>4}, observation: {:>4}, {}",
-                        attempts, observations, result,
+                        attempts, observations, status,
                     );
 
-                    break ObserveResult::Deterministic;
+                    break WorldStatus::Deterministic;
                 }
-                ObserveResult::Contradiction => {
+                WorldStatus::Contradiction => {
                     eprintln!(
                         "attempt: {:>4}, observation: {:>4}, {}",
-                        attempts, observations, result,
+                        attempts, observations, status,
                     );
 
-                    break ObserveResult::Contradiction;
+                    break WorldStatus::Contradiction;
                 }
             }
 
             observations += 1;
         };
 
-        if result == ObserveResult::Deterministic {
+        if status == WorldStatus::Deterministic {
             found_deterministic_result = true;
         }
 
@@ -191,7 +202,7 @@ fn main() {
         chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"),
     ));
 
-    eprintln!("Exporting result to {}", output_file_path.to_string_lossy());
+    eprintln!("Exporting status to {}", output_file_path.to_string_lossy());
     let output_file = match File::create(output_file_path) {
         Ok(file) => file,
         Err(err) => {

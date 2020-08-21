@@ -2,6 +2,7 @@ mod convert;
 
 pub use rand;
 
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
@@ -86,13 +87,13 @@ impl Direction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ObserveResult {
+pub enum WorldStatus {
     Nondeterministic,
     Deterministic,
     Contradiction,
 }
 
-impl fmt::Display for ObserveResult {
+impl fmt::Display for WorldStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Nondeterministic => write!(f, "non-deterministic"),
@@ -228,18 +229,38 @@ impl World {
         }
     }
 
-    pub fn ensure_constraints(&mut self) -> bool {
+    pub fn ensure_constraints(&mut self) -> (bool, WorldStatus) {
         let mut world_changed = false;
 
         for i in 0..self.slots.len() {
-            let (changed, _) = self.propagate_constraints(i);
+            let (changed, contradiction) = self.propagate_constraints(i);
+
             world_changed |= changed;
+
+            // Do not continue for worlds where there is nothing more to do,
+            // otherwise we would trigger asserts.
+
+            // For some contradictions, we know immediately ...
+            if contradiction {
+                return (world_changed, WorldStatus::Contradiction);
+            }
+
+            // ... but we still need to do a comprehensive check
+            match self.world_status() {
+                WorldStatus::Nondeterministic => (),
+                WorldStatus::Deterministic => {
+                    return (world_changed, WorldStatus::Deterministic);
+                }
+                WorldStatus::Contradiction => {
+                    return (world_changed, WorldStatus::Contradiction);
+                }
+            }
         }
 
-        world_changed
+        (world_changed, WorldStatus::Nondeterministic)
     }
 
-    pub fn observe<R: rand::Rng>(&mut self, rng: &mut R) -> ObserveResult {
+    pub fn observe<R: rand::Rng>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
         let mut min_entropy_slot_index_and_value: Option<(usize, usize)> = None;
         for (i, slot) in self.slots.iter().enumerate() {
             let entropy = count_ones(slot);
@@ -247,7 +268,7 @@ impl World {
             // slot is already collapsed. If entropy is 0, we hit a
             // contradiction and can bail out early.
             if entropy == 0 {
-                return ObserveResult::Contradiction;
+                return (false, WorldStatus::Contradiction);
             }
 
             if entropy >= 2 {
@@ -274,15 +295,43 @@ impl World {
             min_entropy_slot.clear();
             min_entropy_slot.add(chosen_module);
 
-            let (_, observe_result) = self.propagate_constraints(min_entropy_slot_index);
+            let (changed, contradiction) = self.propagate_constraints(min_entropy_slot_index);
 
-            observe_result
+            if contradiction {
+                (changed, WorldStatus::Contradiction)
+            } else {
+                let status = self.world_status();
+                (changed, status)
+            }
         } else {
-            ObserveResult::Deterministic
+            (false, WorldStatus::Deterministic)
         }
     }
 
-    fn propagate_constraints(&mut self, slot_index: usize) -> (bool, ObserveResult) {
+    fn world_status(&self) -> WorldStatus {
+        let mut lt1 = false;
+        let mut gt1 = false;
+        for slot in &self.slots {
+            let ones = count_ones(slot);
+            match ones.cmp(&1) {
+                Ordering::Less => {
+                    lt1 = true;
+                }
+                Ordering::Equal => (),
+                Ordering::Greater => {
+                    gt1 = true;
+                }
+            }
+        }
+
+        match (lt1, gt1) {
+            (false, false) => WorldStatus::Deterministic,
+            (false, true) => WorldStatus::Nondeterministic,
+            (true, _) => WorldStatus::Contradiction,
+        }
+    }
+
+    fn propagate_constraints(&mut self, slot_index: usize) -> (bool, bool) {
         let slots_len = self.slots.len();
         let [dim_x, dim_y, dim_z] = self.dims;
 
@@ -507,23 +556,7 @@ impl World {
             }
         }
 
-        if contradiction {
-            (changed, ObserveResult::Contradiction)
-        } else {
-            // FIXME: This may be cleaner to check elsewhere?
-            let mut collapsed = true;
-            for slot in &self.slots {
-                if count_ones(slot) > 1 {
-                    collapsed = false;
-                }
-            }
-
-            if collapsed {
-                (changed, ObserveResult::Deterministic)
-            } else {
-                (changed, ObserveResult::Nondeterministic)
-            }
-        }
+        (changed, contradiction)
     }
 }
 

@@ -10,7 +10,7 @@ use std::mem;
 use std::slice;
 
 use wfc_core::rand::SeedableRng as _;
-use wfc_core::{self, Adjacency, AdjacencyKind, ObserveResult, World};
+use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
 
 use crate::convert::{cast_u32, cast_usize};
 
@@ -202,21 +202,21 @@ pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
         // first time someone called us.
         wfc_state.world.clone_from(&wfc_state.world_initial);
 
-        let result = loop {
-            let result = wfc_state.world.observe(&mut wfc_state.rng);
+        let status = loop {
+            let (_, status) = wfc_state.world.observe(&mut wfc_state.rng);
 
-            match result {
-                ObserveResult::Nondeterministic => (),
-                ObserveResult::Deterministic => {
-                    break ObserveResult::Deterministic;
+            match status {
+                WorldStatus::Nondeterministic => (),
+                WorldStatus::Deterministic => {
+                    break WorldStatus::Deterministic;
                 }
-                ObserveResult::Contradiction => {
-                    break ObserveResult::Contradiction;
+                WorldStatus::Contradiction => {
+                    break WorldStatus::Contradiction;
                 }
             }
         };
 
-        if result == ObserveResult::Deterministic {
+        if status == WorldStatus::Deterministic {
             deterministic = true;
         }
 
@@ -228,6 +228,13 @@ pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
     } else {
         0
     }
+}
+
+#[repr(u32)]
+pub enum WfcWorldStateSetResult {
+    Ok = 0,
+    OkNotCanonical = 1,
+    WorldContradictory = 2,
 }
 
 /// Writes world state from `world_state_ptr` and `world_state_len` into the
@@ -256,6 +263,16 @@ pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
 /// [1, 1, 1]
 /// ```
 ///
+/// If this function returns `WfcWorldStateSetResult::WorldContradictory`, the
+/// provided handle becomes invalid. It will become valid once again when passed
+/// to this function and `WfcWorldStateSetResult::Ok` or
+/// `WfcWorldStateSetResult::OkNotcanonical` is returned.
+///
+/// If the modules in slots in the provided world state could still be collapsed
+/// according to the current rule set, the world is not canonical. This function
+/// fixes that and returns `WfcWorldStateSetResult::OkNotCanonical` as a
+/// warning.
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
@@ -270,7 +287,7 @@ pub unsafe extern "C" fn wfc_world_state_set(
     wfc: Wfc,
     world_state_ptr: *const [u64; 8],
     world_state_len: usize,
-) {
+) -> WfcWorldStateSetResult {
     let wfc_state = {
         assert!(!wfc.0.is_null());
         &mut *wfc.0
@@ -287,11 +304,20 @@ pub unsafe extern "C" fn wfc_world_state_set(
 
     // Since we are importing a custom world state, we can not be sure all
     // adjacency rule constraints are initially satisfied.
-    wfc_state.world_initial.ensure_constraints();
+    let (world_changed, world_status) = wfc_state.world_initial.ensure_constraints();
+    if world_status == WorldStatus::Contradiction {
+        return WfcWorldStateSetResult::WorldContradictory;
+    }
 
     // Clone eagerly so that if someone calls `wfc_world_state_get` immediately
     // after without observing first, they get back the state that was set.
     wfc_state.world.clone_from(&wfc_state.world_initial);
+
+    if world_changed {
+        WfcWorldStateSetResult::OkNotCanonical
+    } else {
+        WfcWorldStateSetResult::Ok
+    }
 }
 
 /// Reads world state from the provided handle into `world_state_ptr` and

@@ -15,6 +15,12 @@ enum class WfcInitResult : uint32_t {
   WorldDimensionsZero = 2,
 };
 
+enum class WfcWorldStateSetResult : uint32_t {
+  Ok = 0,
+  OkNotCanonical = 1,
+  WorldContradictory = 2,
+};
+
 struct WfcState;
 
 /// An opaque handle to `WfcState`. Actually a pointer, but shhh!
@@ -137,6 +143,16 @@ void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[8], uintptr_t worl
 /// [1, 1, 1]
 /// ```
 ///
+/// If this function returns `WfcWorldStateSetResult::WorldContradictory`, the
+/// provided handle becomes invalid. It will become valid once again when passed
+/// to this function and `WfcWorldStateSetResult::Ok` or
+/// `WfcWorldStateSetResult::OkNotcanonical` is returned.
+///
+/// If the modules in slots in the provided world state could still be collapsed
+/// according to the current rule set, the world is not canonical. This function
+/// fixes that and returns `WfcWorldStateSetResult::OkNotCanonical` as a
+/// warning.
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
@@ -146,6 +162,8 @@ void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[8], uintptr_t worl
 ///
 /// - `world_state_ptr` and `world_state_len` are used to construct a slice. See
 ///   `slice::from_raw_parts`.
-void wfc_world_state_set(Wfc wfc, const uint64_t (*world_state_ptr)[8], uintptr_t world_state_len);
+WfcWorldStateSetResult wfc_world_state_set(Wfc wfc,
+                                           const uint64_t (*world_state_ptr)[8],
+                                           uintptr_t world_state_len);
 
 } // extern "C"
