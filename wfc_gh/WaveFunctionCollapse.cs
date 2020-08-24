@@ -293,6 +293,10 @@ public class GH_WaveFunctionCollapse3D : GH_Component
 
                         // AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
                         //                   "Branch " + branchIndex + " (" + name + ") [" + blkIdx + "," + bitIdx + "] mask=" + mask + " slot=" + slotState);
+                    } else {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                          "World state data contains module not found in the ruleset: " + name);
+                        return;
                     }
                 }
 
