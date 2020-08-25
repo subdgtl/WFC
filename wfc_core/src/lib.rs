@@ -245,19 +245,22 @@ impl World {
                 return (world_changed, WorldStatus::Contradiction);
             }
 
-            // ... but we still need to do a comprehensive check
+            // ... but we still need to do a comprehensive check to find
+            // contradictions elsewhere. We only return immediately for
+            // contradictions. Deterministic or Nondeterministic don't mean
+            // anything yet, because we may still remove more modules, possibly
+            // transitioning Nondeterministic to Deterministic or Deterministic
+            // to Contractiction.
             match self.world_status() {
                 WorldStatus::Nondeterministic => (),
-                WorldStatus::Deterministic => {
-                    return (world_changed, WorldStatus::Deterministic);
-                }
+                WorldStatus::Deterministic => (),
                 WorldStatus::Contradiction => {
                     return (world_changed, WorldStatus::Contradiction);
                 }
             }
         }
 
-        (world_changed, WorldStatus::Nondeterministic)
+        (world_changed, self.world_status())
     }
 
     pub fn observe<R: rand::Rng>(&mut self, rng: &mut R) -> (bool, WorldStatus) {

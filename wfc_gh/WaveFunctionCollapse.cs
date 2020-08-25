@@ -94,6 +94,8 @@ public class GH_WaveFunctionCollapse3D : GH_Component
 
     protected override void SolveInstance(IGH_DataAccess DA)
     {
+        Stats stats = new Stats();
+
         //
         // -- Adjacency rules --
         //
@@ -263,7 +265,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                 }
 
                 SlotState slotState;
-                // Oh, God C#. WHY?! WHERE ARE THE SANE DEFAULTS. WHAT DO YOU SEE?
+                // C# does not initialize slot_state for us...
                 unsafe
                 {
                     slotState.slot_state[0] = 0;
@@ -384,10 +386,11 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                     {
                         case WfcWorldStateSetResult.Ok:
                             // All good
+                            stats.worldNotCanonical = false;
                             break;
                         case WfcWorldStateSetResult.OkNotCanonical:
-                            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                                              "WFC solver warning: World state is not canonical");
+                            // All good, but we had to fix some things
+                            stats.worldNotCanonical = true;
                             break;
                         case WfcWorldStateSetResult.WorldContradictory:
                             AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
@@ -459,7 +462,6 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             }
         }
 
-        Stats stats;
         stats.ruleCount = (UInt32)minCount;
         stats.moduleCount = (UInt32)moduleToName.Count;
         stats.solveAttempts = attempts;
@@ -540,6 +542,7 @@ internal struct Stats
     public UInt32 ruleCount;
     public UInt32 moduleCount;
     public UInt32 solveAttempts;
+    public bool worldNotCanonical;
 
     public override string ToString()
     {
@@ -554,6 +557,11 @@ internal struct Stats
         b.Append("Solve attempts: ");
         b.Append(solveAttempts);
         b.AppendLine();
+
+        if (worldNotCanonical)
+        {
+            b.AppendLine("Warning: Initial world state is not canonical");
+        }
 
         return b.ToString();
     }

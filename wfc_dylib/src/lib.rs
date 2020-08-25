@@ -241,7 +241,7 @@ pub enum WfcWorldStateSetResult {
 /// provided handle.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 0th and 2nd bits set will contain
+/// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
 /// modules with ids 0 and 2.
 ///
 /// Currently does not validate against setting bits higher than the module
@@ -324,7 +324,7 @@ pub unsafe extern "C" fn wfc_world_state_set(
 /// `world_state_len`.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 0th and 2nd bits set will contain
+/// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
 /// modules with ids 0 and 2.
 ///
 /// The bit vectors of state are stored in a three dimensional array (compacted

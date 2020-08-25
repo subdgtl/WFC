@@ -202,7 +202,7 @@ fn main() {
         chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"),
     ));
 
-    eprintln!("Exporting status to {}", output_file_path.to_string_lossy());
+    eprintln!("Exporting result to {}", output_file_path.to_string_lossy());
     let output_file = match File::create(output_file_path) {
         Ok(file) => file,
         Err(err) => {
