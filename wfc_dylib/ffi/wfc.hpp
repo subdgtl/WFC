@@ -12,8 +12,13 @@ enum class AdjacencyRuleKind : uint32_t {
 enum class WfcInitResult : uint32_t {
   Ok = 0,
   TooManyModules = 1,
-  RulesContainVoidModule = 2,
-  WorldDimensionsZero = 3,
+  WorldDimensionsZero = 2,
+};
+
+enum class WfcWorldStateSetResult : uint32_t {
+  Ok = 0,
+  OkNotCanonical = 1,
+  WorldContradictory = 2,
 };
 
 struct WfcState;
@@ -40,9 +45,9 @@ extern "C" {
 void wfc_free(Wfc wfc);
 
 /// Initializes Wave Function Collapse state with adjacency rules. The world
-/// gets initialized with every module possible in every slot and no voids.
+/// gets initialized with every module possible in every slot.
 ///
-/// To change slots to voids or change the world state, use
+/// To change the world state to a different configuration, use
 /// `wfc_world_state_set`.
 ///
 /// # Safety
@@ -82,9 +87,8 @@ uint32_t wfc_observe(Wfc wfc, uint32_t max_attempts);
 /// `world_state_len`.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 1st and 3rd bits set will contain
-/// modules with ids 1 and 3. The 0th bit is reserved to denote the module is
-/// void and is exclusive with all other set bits.
+/// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
+/// modules with ids 0 and 2.
 ///
 /// The bit vectors of state are stored in a three dimensional array (compacted
 /// in a one dimensional array). To get to a slot state on position `[x, y, z]`,
@@ -117,10 +121,8 @@ void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[8], uintptr_t worl
 /// provided handle.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 1st and 3rd bits set will contain
-/// modules with ids 1 and 3. The 0th bit is reserved to denote the module is
-/// void and is exclusive with all other set bits. It is a usage error to set
-/// both the 0th bit and any other bit.
+/// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
+/// modules with ids 0 and 2.
 ///
 /// Currently does not validate against setting bits higher than the module
 /// count, but it is a usage error to do so.
@@ -141,6 +143,16 @@ void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[8], uintptr_t worl
 /// [1, 1, 1]
 /// ```
 ///
+/// If this function returns `WfcWorldStateSetResult::WorldContradictory`, the
+/// provided handle becomes invalid. It will become valid once again when passed
+/// to this function and `WfcWorldStateSetResult::Ok` or
+/// `WfcWorldStateSetResult::OkNotcanonical` is returned.
+///
+/// If the modules in slots in the provided world state could still be collapsed
+/// according to the current rule set, the world is not canonical. This function
+/// fixes that and returns `WfcWorldStateSetResult::OkNotCanonical` as a
+/// warning.
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
@@ -150,6 +162,8 @@ void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[8], uintptr_t worl
 ///
 /// - `world_state_ptr` and `world_state_len` are used to construct a slice. See
 ///   `slice::from_raw_parts`.
-void wfc_world_state_set(Wfc wfc, const uint64_t (*world_state_ptr)[8], uintptr_t world_state_len);
+WfcWorldStateSetResult wfc_world_state_set(Wfc wfc,
+                                           const uint64_t (*world_state_ptr)[8],
+                                           uintptr_t world_state_len);
 
 } // extern "C"

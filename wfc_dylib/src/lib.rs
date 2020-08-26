@@ -1,25 +1,30 @@
+//! # The WFC dynamic library C API
+//!
+//! None of the functions provided here are thread safe. If they are going to be
+//! called from different threads, a per-handle synchronization must be
+//! externally provided.
+
 mod convert;
 
 use std::mem;
-use std::num::NonZeroU32;
 use std::slice;
-use std::sync::Mutex;
 
 use wfc_core::rand::SeedableRng as _;
-use wfc_core::{self, Adjacency, AdjacencyKind, ObserveResult, World};
+use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
 
 use crate::convert::{cast_u32, cast_usize};
 
-// FIXME: Make the `Wfc` a proper opaque handle and store the states in an
-// array. https://floooh.github.io/2018/06/17/handles-vs-pointers.html
+/// Maximum number of modules supported to be sent with `wfc_world_state_get`
+/// and `wfc_world_state_set`.
+const WFC_MODULE_MAX: usize = mem::size_of::<[u64; 8]>() * 8;
 
-// Maximum number of modules supported to be sent with `wfc_world_state_get` and
-// `wfc_world_state_set`. Sub 1 b/c because the void module occupies the first
-// bit and voids don't count as modules.
-const MAX_MODULE_COUNT: usize = mem::size_of::<[u64; 8]>() * 8 - 1;
+// FIXME: Adjacency and AdjacencyKind are duplicated here only because otherwise
+// cbindgen can't find them easily in wfc_core. cbindgen could possbily be
+// configured to crawl certain allowed types in dependencies only, without
+// bringing over too much stuff.
 
-#[derive(Clone, Copy)]
 #[repr(u32)]
+#[derive(Clone, Copy)]
 pub enum AdjacencyRuleKind {
     X = 0,
     Y = 1,
@@ -44,13 +49,24 @@ pub struct AdjacencyRule {
     pub module_high: u32,
 }
 
+impl Into<Adjacency> for AdjacencyRule {
+    fn into(self) -> Adjacency {
+        Adjacency {
+            kind: self.kind.into(),
+            module_low: self.module_low,
+            module_high: self.module_high,
+        }
+    }
+}
+
+// FIXME: Make the `Wfc` a proper opaque handle and store the states in an
+// array. https://floooh.github.io/2018/06/17/handles-vs-pointers.html
+
 /// An opaque handle to `WfcState`. Actually a pointer, but shhh!
 #[repr(transparent)]
 pub struct Wfc(*mut WfcState);
 
-struct WfcState(Mutex<WfcStateInner>);
-
-struct WfcStateInner {
+struct WfcState {
     // FIXME: This world_initial <-> world duplication makes the API
     // non-intuitive. On the outside it isn't obvious that you can run
     // wfc_observe multiple times without resetting the state manually.
@@ -71,27 +87,17 @@ struct WfcStateInner {
     rng: rand_pcg::Pcg32,
 }
 
-impl WfcStateInner {
-    /// Gets mutable borrow on every field to work around the fact that this is
-    /// contained in a Mutex which has to use Deref to get fields and therefore
-    /// borrows the whole struct even for field subborrows.
-    fn fields_mut(&mut self) -> (&mut World, &mut World, &mut rand_pcg::Pcg32) {
-        (&mut self.world_initial, &mut self.world, &mut self.rng)
-    }
-}
-
 #[repr(u32)]
 pub enum WfcInitResult {
     Ok = 0,
     TooManyModules = 1,
-    RulesContainVoidModule = 2,
-    WorldDimensionsZero = 3,
+    WorldDimensionsZero = 2,
 }
 
 /// Initializes Wave Function Collapse state with adjacency rules. The world
-/// gets initialized with every module possible in every slot and no voids.
+/// gets initialized with every module possible in every slot.
 ///
-/// To change slots to voids or change the world state, use
+/// To change the world state to a different configuration, use
 /// `wfc_world_state_set`.
 ///
 /// # Safety
@@ -119,39 +125,28 @@ pub unsafe extern "C" fn wfc_init(
         slice::from_raw_parts(adjacency_rules_ptr, adjacency_rules_len)
     };
 
-    let mut adjacencies: Vec<Adjacency> = Vec::with_capacity(adjacency_rules.len());
-    for adjacency_rule in adjacency_rules {
-        if adjacency_rule.module_low == 0 || adjacency_rule.module_high == 0 {
-            return WfcInitResult::RulesContainVoidModule;
-        }
-
-        let adjacency = Adjacency {
-            kind: adjacency_rule.kind.into(),
-            module_low: NonZeroU32::new(adjacency_rule.module_low).unwrap(),
-            module_high: NonZeroU32::new(adjacency_rule.module_high).unwrap(),
-        };
-
-        adjacencies.push(adjacency);
-    }
-
     if world_x == 0 || world_y == 0 || world_z == 0 {
         return WfcInitResult::WorldDimensionsZero;
     }
 
+    let adjacencies = adjacency_rules
+        .iter()
+        .map(|adjacency_rule| (*adjacency_rule).into())
+        .collect();
     let world_initial = World::new([world_x, world_y, world_z], adjacencies);
 
-    if world_initial.module_count() > MAX_MODULE_COUNT {
+    if world_initial.module_count() > WFC_MODULE_MAX {
         return WfcInitResult::TooManyModules;
     }
 
     let world = world_initial.clone();
     let rng = rand_pcg::Pcg32::from_seed(rng_seed);
 
-    let wfc_state_ptr = Box::into_raw(Box::new(WfcState(Mutex::new(WfcStateInner {
+    let wfc_state_ptr = Box::into_raw(Box::new(WfcState {
         world_initial,
         world,
         rng,
-    }))));
+    }));
     let wfc = Wfc(wfc_state_ptr);
 
     assert!(!wfc_ptr.is_null());
@@ -199,32 +194,29 @@ pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
         &mut *wfc.0
     };
 
-    let mut wfc_state_guard = wfc_state.0.lock().unwrap();
-    let (world_initial, world, rng) = wfc_state_guard.fields_mut();
-
     let mut deterministic = false;
     let mut attempts = 0;
 
     while attempts < max_attempts && !deterministic {
         // Must clone on first attempt as well, because this might not be the
         // first time someone called us.
-        world.clone_from(world_initial);
+        wfc_state.world.clone_from(&wfc_state.world_initial);
 
-        let result = loop {
-            let result = world.observe(rng);
+        let status = loop {
+            let (_, status) = wfc_state.world.observe(&mut wfc_state.rng);
 
-            match result {
-                ObserveResult::Nondeterministic => (),
-                ObserveResult::Deterministic => {
-                    break ObserveResult::Deterministic;
+            match status {
+                WorldStatus::Nondeterministic => (),
+                WorldStatus::Deterministic => {
+                    break WorldStatus::Deterministic;
                 }
-                ObserveResult::Contradiction => {
-                    break ObserveResult::Contradiction;
+                WorldStatus::Contradiction => {
+                    break WorldStatus::Contradiction;
                 }
             }
         };
 
-        if result == ObserveResult::Deterministic {
+        if status == WorldStatus::Deterministic {
             deterministic = true;
         }
 
@@ -238,14 +230,19 @@ pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
     }
 }
 
+#[repr(u32)]
+pub enum WfcWorldStateSetResult {
+    Ok = 0,
+    OkNotCanonical = 1,
+    WorldContradictory = 2,
+}
+
 /// Writes world state from `world_state_ptr` and `world_state_len` into the
 /// provided handle.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 1st and 3rd bits set will contain
-/// modules with ids 1 and 3. The 0th bit is reserved to denote the module is
-/// void and is exclusive with all other set bits. It is a usage error to set
-/// both the 0th bit and any other bit.
+/// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
+/// modules with ids 0 and 2.
 ///
 /// Currently does not validate against setting bits higher than the module
 /// count, but it is a usage error to do so.
@@ -266,6 +263,16 @@ pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
 /// [1, 1, 1]
 /// ```
 ///
+/// If this function returns `WfcWorldStateSetResult::WorldContradictory`, the
+/// provided handle becomes invalid. It will become valid once again when passed
+/// to this function and `WfcWorldStateSetResult::Ok` or
+/// `WfcWorldStateSetResult::OkNotcanonical` is returned.
+///
+/// If the modules in slots in the provided world state could still be collapsed
+/// according to the current rule set, the world is not canonical. This function
+/// fixes that and returns `WfcWorldStateSetResult::OkNotCanonical` as a
+/// warning.
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
@@ -280,7 +287,7 @@ pub unsafe extern "C" fn wfc_world_state_set(
     wfc: Wfc,
     world_state_ptr: *const [u64; 8],
     world_state_len: usize,
-) {
+) -> WfcWorldStateSetResult {
     let wfc_state = {
         assert!(!wfc.0.is_null());
         &mut *wfc.0
@@ -293,22 +300,32 @@ pub unsafe extern "C" fn wfc_world_state_set(
         slice::from_raw_parts(world_state_ptr, world_state_len)
     };
 
-    let mut wfc_state_guard = wfc_state.0.lock().unwrap();
-    let (world_initial, world, _) = wfc_state_guard.fields_mut();
+    import_world_state(&mut wfc_state.world_initial, world_state);
 
-    import_world_state(world_initial, world_state);
+    // Since we are importing a custom world state, we can not be sure all
+    // adjacency rule constraints are initially satisfied.
+    let (world_changed, world_status) = wfc_state.world_initial.ensure_constraints();
+    if world_status == WorldStatus::Contradiction {
+        return WfcWorldStateSetResult::WorldContradictory;
+    }
+
     // Clone eagerly so that if someone calls `wfc_world_state_get` immediately
     // after without observing first, they get back the state that was set.
-    world.clone_from(world_initial);
+    wfc_state.world.clone_from(&wfc_state.world_initial);
+
+    if world_changed {
+        WfcWorldStateSetResult::OkNotCanonical
+    } else {
+        WfcWorldStateSetResult::Ok
+    }
 }
 
 /// Reads world state from the provided handle into `world_state_ptr` and
 /// `world_state_len`.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a module with 1st and 3rd bits set will contain
-/// modules with ids 1 and 3. The 0th bit is reserved to denote the module is
-/// void and is exclusive with all other set bits.
+/// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
+/// modules with ids 0 and 2.
 ///
 /// The bit vectors of state are stored in a three dimensional array (compacted
 /// in a one dimensional array). To get to a slot state on position `[x, y, z]`,
@@ -353,8 +370,7 @@ pub unsafe extern "C" fn wfc_world_state_get(
         slice::from_raw_parts_mut(world_state_ptr, world_state_len)
     };
 
-    let wfc_state_guard = wfc_state.0.lock().unwrap();
-    export_world_state(&wfc_state_guard.world, world_state);
+    export_world_state(&wfc_state.world, world_state);
 }
 
 fn import_world_state(world: &mut World, world_state: &[[u64; 8]]) {
@@ -371,7 +387,6 @@ fn import_world_state(world: &mut World, world_state: &[[u64; 8]]) {
 }
 
 fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 8]) {
-    world.set_slot_void(pos, false);
     world.set_slot_modules(pos, false);
 
     for (blk_index, blk) in slot_state.iter().enumerate() {
@@ -380,11 +395,7 @@ fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 8]) {
             let value = blk & (1 << bit_index);
 
             if value != 0 {
-                if module == 0 {
-                    world.set_slot_void(pos, true);
-                } else {
-                    world.set_slot_module(pos, NonZeroU32::new(cast_u32(module)).unwrap(), true);
-                }
+                world.set_slot_module(pos, cast_u32(module), true);
             }
         }
     }

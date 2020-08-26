@@ -53,7 +53,6 @@ file are "visual", in a right-handed Z-up coordinate system.
       (the first row of a layer had the highest Y - RHS coords)
     - Each value is one of:
         - `*`: The wildcard, allows every module to be present
-        - `?`: The void, ignored by the algorithm
         - `[thingy]`: A slot containing one module
         - `[thingy,another_thingy,stuff]`: A slot containing multiple (comma
           separated) modules
@@ -70,7 +69,7 @@ Even though the following example has comments, they are not supported in the fi
                                <-- Mandatory newline separating two Z-layers
 [thingy][thingy,stuff][thingy] <-- (X=1,Y=2,Z=0) has two possible values: thingy and stuff
 [thingy] * [thingy]            <-- (X=1,Y=1,Z=0) has ALL possible values specified in the CSV
-[thingy] ? [thingy             <-- (X=1,Y=0,Z=0) has the void value and will be ignored by WFC
+[thingy][thingy][thingy]
 ```
 
 ## Output TXT file

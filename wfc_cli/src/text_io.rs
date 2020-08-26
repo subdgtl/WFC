@@ -2,7 +2,7 @@ use std::collections::hash_map::{Entry, HashMap};
 use std::error;
 use std::fmt;
 use std::io;
-use std::num::{self, NonZeroU32};
+use std::num;
 use std::str::FromStr as _;
 
 use regex::Regex;
@@ -11,7 +11,6 @@ use wfc_core::{Adjacency, AdjacencyKind, World};
 
 use crate::convert::cast_u16;
 
-const SLOT_NAME_VOID: &str = "?";
 const SLOT_NAME_WILDCARD: &str = "*";
 
 #[derive(Debug)]
@@ -21,8 +20,8 @@ pub enum AdjacencyRulesImportError {
         expected: usize,
         found: usize,
     },
-    InvalidAdjacencyKind {
-        adjacency_kind: String,
+    InvalidAdjacencyRuleKind {
+        kind: String,
     },
     Csv(csv::Error),
 }
@@ -39,8 +38,8 @@ impl fmt::Display for AdjacencyRulesImportError {
                 "CSV row {} contains invalid number of fields (expected {} but found {})",
                 row, expected, found,
             ),
-            Self::InvalidAdjacencyKind { adjacency_kind } => {
-                write!(f, "Found invalid adjacency kind: {}", adjacency_kind)
+            Self::InvalidAdjacencyRuleKind { kind } => {
+                write!(f, "Found invalid adjacency kind: {}", kind)
             }
             Self::Csv(csv_error) => write!(f, "{}", csv_error),
         }
@@ -57,8 +56,8 @@ impl From<csv::Error> for AdjacencyRulesImportError {
 
 pub struct AdjacencyRulesImportResult {
     pub adjacencies: Vec<Adjacency>,
-    pub name_to_module: HashMap<String, NonZeroU32>,
-    pub module_to_name: HashMap<NonZeroU32, String>,
+    pub name_to_module: HashMap<String, u32>,
+    pub module_to_name: HashMap<u32, String>,
 }
 
 pub fn import_adjacency_rules<R: io::Read>(
@@ -66,9 +65,9 @@ pub fn import_adjacency_rules<R: io::Read>(
 ) -> Result<AdjacencyRulesImportResult, AdjacencyRulesImportError> {
     log::info!("Importing adjacency rules CSV");
 
-    let mut next_module = 1;
-    let mut module_to_name: HashMap<NonZeroU32, String> = HashMap::new();
-    let mut name_to_module: HashMap<String, NonZeroU32> = HashMap::new();
+    let mut next_module = 0;
+    let mut module_to_name: HashMap<u32, String> = HashMap::new();
+    let mut name_to_module: HashMap<String, u32> = HashMap::new();
 
     let mut adjacencies: Vec<Adjacency> = Vec::new();
     let mut reader = csv::ReaderBuilder::new()
@@ -88,12 +87,12 @@ pub fn import_adjacency_rules<R: io::Read>(
             });
         }
 
-        let adjacency_kind_str = record.get(0).unwrap();
+        let kind_str = record.get(0).unwrap();
         let module_low_str = record.get(1).unwrap();
         let module_high_str = record.get(2).unwrap();
 
         if let ("axis", "low", "high") = (
-            adjacency_kind_str.trim(),
+            kind_str.trim(),
             module_low_str.trim(),
             module_high_str.trim(),
         ) {
@@ -101,13 +100,13 @@ pub fn import_adjacency_rules<R: io::Read>(
             continue;
         }
 
-        let adjacency_kind = match adjacency_kind_str {
+        let kind = match kind_str {
             "x" | "X" => AdjacencyKind::X,
             "y" | "Y" => AdjacencyKind::Y,
             "z" | "Z" => AdjacencyKind::Z,
             _ => {
-                return Err(AdjacencyRulesImportError::InvalidAdjacencyKind {
-                    adjacency_kind: adjacency_kind_str.to_string(),
+                return Err(AdjacencyRulesImportError::InvalidAdjacencyRuleKind {
+                    kind: kind_str.to_string(),
                 });
             }
         };
@@ -115,7 +114,7 @@ pub fn import_adjacency_rules<R: io::Read>(
         let module_low = match name_to_module.entry(module_low_str.to_string()) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
-                let module = NonZeroU32::new(next_module).unwrap();
+                let module = next_module;
                 vacant_entry.insert(module);
                 module_to_name.insert(module, module_low_str.to_string());
 
@@ -128,7 +127,7 @@ pub fn import_adjacency_rules<R: io::Read>(
         let module_high = match name_to_module.entry(module_high_str.to_string()) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
-                let module = NonZeroU32::new(next_module).unwrap();
+                let module = next_module;
                 vacant_entry.insert(module);
                 module_to_name.insert(module, module_high_str.to_string());
 
@@ -139,7 +138,7 @@ pub fn import_adjacency_rules<R: io::Read>(
         };
 
         adjacencies.push(Adjacency {
-            kind: adjacency_kind,
+            kind,
             module_low,
             module_high,
         });
@@ -157,6 +156,11 @@ pub enum InitialStateImportError {
     InvalidHeader,
     DimensionMismatch,
     UnexpectedModule(String),
+    InvalidNumberOfEntries {
+        line: usize,
+        expected: u16,
+        found: u16,
+    },
     ParseInt {
         line: usize,
         error: num::ParseIntError,
@@ -175,6 +179,15 @@ impl fmt::Display for InitialStateImportError {
                 f,
                 "Found module not mentioned by the adjacency rules: {}",
                 id,
+            ),
+            Self::InvalidNumberOfEntries {
+                line,
+                expected,
+                found,
+            } => write!(
+                f,
+                "Found invalid number of entries on line {}. Expected {}, but found {}.",
+                line, expected, found,
             ),
             Self::ParseInt { line, error } => write!(
                 f,
@@ -198,11 +211,11 @@ pub fn import_world_state<R: io::BufRead>(
     mut r: R,
     world: &mut World,
     dims: [u16; 3],
-    name_to_module: &HashMap<String, NonZeroU32>,
+    name_to_module: &HashMap<String, u32>,
 ) -> Result<(), InitialStateImportError> {
     log::info!("Importing initial state text");
 
-    let slot_regex = Regex::new(r"\*|\?|\[([^\]]*)\]").unwrap();
+    let slot_regex = Regex::new(r"\*|\[([^\]]*)\]").unwrap();
     let mut line_buffer = String::with_capacity(1024);
     let mut line = 1;
 
@@ -240,44 +253,45 @@ pub fn import_world_state<R: io::BufRead>(
             r.read_line(&mut line_buffer)?;
             line += 1;
 
+            let mut line_slots = 0;
             for (x, slot_match) in slot_regex.find_iter(&line_buffer).enumerate() {
                 let slot_str = slot_match.as_str();
 
                 let mut slot: TinyVec<[u32; 4]> = TinyVec::new();
                 match slot_str {
-                    SLOT_NAME_WILDCARD => {
-                        slot.extend(name_to_module.values().copied().map(NonZeroU32::get))
-                    }
-                    SLOT_NAME_VOID => {
-                        slot.push(0);
-                    }
+                    SLOT_NAME_WILDCARD => slot.extend(name_to_module.values().copied()),
                     _ => {
                         let slot_str_inner = slot_str.trim_start_matches('[').trim_end_matches(']');
 
-                        // Only attempt to parse integers if the cell contains
-                        // something else than whitespace.
+                        // Only attempt to parse identifiers if the cell
+                        // contains something else than whitespace.
                         if !slot_str_inner.trim().is_empty() {
                             for name in slot_str_inner.split(',') {
                                 let module = name_to_module.get(name).ok_or_else(|| {
                                     InitialStateImportError::UnexpectedModule(name.to_string())
                                 })?;
 
-                                slot.push(module.get());
+                                slot.push(*module);
                             }
                         }
                     }
                 }
 
                 let pos = [cast_u16(x), cast_u16(y), cast_u16(z)];
-                world.set_slot_void(pos, false);
                 world.set_slot_modules(pos, false);
                 for module in slot {
-                    if module == 0 {
-                        world.set_slot_void(pos, true);
-                    } else {
-                        world.set_slot_module(pos, NonZeroU32::new(module).unwrap(), true);
-                    }
+                    world.set_slot_module(pos, module, true);
                 }
+
+                line_slots += 1;
+            }
+
+            if line_slots != dim_x {
+                return Err(InitialStateImportError::InvalidNumberOfEntries {
+                    line,
+                    expected: dim_x,
+                    found: line_slots,
+                });
             }
 
             line_buffer.clear();
@@ -291,7 +305,7 @@ pub fn import_world_state<R: io::BufRead>(
 pub fn export_world_state<W: io::Write>(
     w: &mut W,
     world: &World,
-    module_to_name: &HashMap<NonZeroU32, String>,
+    module_to_name: &HashMap<u32, String>,
 ) {
     let dims = world.dims();
 
@@ -349,25 +363,21 @@ pub fn export_world_state<W: io::Write>(
 fn write_modules_in_slot<W: fmt::Write>(
     w: &mut W,
     modules_in_slot: &[u32],
-    module_to_name: &HashMap<NonZeroU32, String>,
+    module_to_name: &HashMap<u32, String>,
 ) {
-    if modules_in_slot.len() == 1 && modules_in_slot[0] == 0 {
-        write!(w, " {} ", SLOT_NAME_VOID).unwrap();
-    } else {
-        write!(w, "[").unwrap();
+    write!(w, "[").unwrap();
 
-        let mut first = true;
-        for module in modules_in_slot {
-            let name = &module_to_name[&NonZeroU32::new(*module).unwrap()];
+    let mut first = true;
+    for module in modules_in_slot {
+        let name = &module_to_name[module];
 
-            if first {
-                write!(w, "{}", name).unwrap();
-                first = false;
-            } else {
-                write!(w, ",{}", name).unwrap();
-            }
+        if first {
+            write!(w, "{}", name).unwrap();
+            first = false;
+        } else {
+            write!(w, ",{}", name).unwrap();
         }
-
-        write!(w, "]").unwrap();
     }
+
+    write!(w, "]").unwrap();
 }
