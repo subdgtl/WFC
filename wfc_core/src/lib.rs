@@ -1,4 +1,4 @@
-mod bitset;
+mod bitvec;
 mod convert;
 
 pub use rand;
@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
-use crate::bitset::TinyBitSet;
+use crate::bitvec::TinyBitVec;
 use crate::convert::{cast_u32, cast_u8, cast_usize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -102,7 +102,7 @@ impl fmt::Display for WorldStatus {
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
-    slots: Vec<TinyBitSet>,
+    slots: Vec<TinyBitVec>,
     module_count: usize,
 }
 
@@ -114,7 +114,7 @@ impl World {
 
         assert!(!adjacencies.is_empty());
 
-        let mut modules = TinyBitSet::zeroes();
+        let mut modules = TinyBitVec::zeros();
         let mut module_count = 0;
         let mut module_max = 0;
 
@@ -361,7 +361,7 @@ impl World {
                     // FIXME: @Optimization This is only allocated to
                     // appease the borrowchecker. Can we not allocate the
                     // bit difference using slice::split_at_mut or similar?
-                    let mut new_slot = TinyBitSet::zeroes();
+                    let mut new_slot = TinyBitVec::zeros();
 
                     for adj in self
                         .adjacencies
@@ -559,9 +559,9 @@ impl World {
     }
 }
 
-fn choose_random<R: rand::Rng>(bitset: &TinyBitSet, rng: &mut R) -> u32 {
+fn choose_random<R: rand::Rng>(bitvec: &TinyBitVec, rng: &mut R) -> u32 {
     use rand::seq::IteratorRandom as _;
-    let value = bitset.iter().choose(rng).unwrap();
+    let value = bitvec.iter().choose(rng).unwrap();
 
     u32::from(value)
 }
