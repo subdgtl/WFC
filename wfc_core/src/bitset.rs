@@ -1,7 +1,5 @@
 use std::mem;
 
-use crate::convert::{cast_u8, cast_usize};
-
 const U8_MAX: u16 = u8::MAX as u16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -58,12 +56,14 @@ impl TinyBitSet {
     }
 
     pub fn len(&self) -> usize {
-        let c0 = cast_usize(self.data[0].count_ones());
-        let c1 = cast_usize(self.data[1].count_ones());
-        let c2 = cast_usize(self.data[2].count_ones());
-        let c3 = cast_usize(self.data[3].count_ones());
+        // usize is defined to be at least 16 bits wide, the following `as`
+        // casts should be ok for up to 2^16 ones in the whole array.
+        let c0 = self.data[0].count_ones() as usize;
+        let c1 = self.data[1].count_ones() as usize;
+        let c2 = self.data[2].count_ones() as usize;
+        let c3 = self.data[3].count_ones() as usize;
 
-        c0.saturating_add(c1).saturating_add(c2).saturating_add(c3)
+        c0 + c1 + c2 + c3
     }
 
     pub fn clear(&mut self) {
@@ -78,27 +78,31 @@ impl TinyBitSet {
     }
 
     pub fn and(&mut self, other: &TinyBitSet) {
-        for (self_value_mut, other_value) in self.data.iter_mut().zip(other.data.iter()) {
-            *self_value_mut &= other_value;
-        }
+        self.data[0] &= other.data[0];
+        self.data[1] &= other.data[1];
+        self.data[2] &= other.data[2];
+        self.data[3] &= other.data[3];
     }
 
     pub fn or(&mut self, other: &TinyBitSet) {
-        for (self_value_mut, other_value) in self.data.iter_mut().zip(other.data.iter()) {
-            *self_value_mut |= other_value;
-        }
+        self.data[0] |= other.data[0];
+        self.data[1] |= other.data[1];
+        self.data[2] |= other.data[2];
+        self.data[3] |= other.data[3];
     }
 
     pub fn xor(&mut self, other: &TinyBitSet) {
-        for (self_value_mut, other_value) in self.data.iter_mut().zip(other.data.iter()) {
-            *self_value_mut ^= other_value;
-        }
+        self.data[0] ^= other.data[0];
+        self.data[1] ^= other.data[1];
+        self.data[2] ^= other.data[2];
+        self.data[3] ^= other.data[3];
     }
 
     pub fn not(&mut self) {
-        for self_value_mut in self.data.iter_mut() {
-            *self_value_mut = !*self_value_mut;
-        }
+        self.data[0] &= !self.data[0];
+        self.data[1] &= !self.data[1];
+        self.data[2] &= !self.data[2];
+        self.data[3] &= !self.data[3];
     }
 }
 
@@ -112,7 +116,7 @@ impl<'a> Iterator for TinyBitSetIterator<'a> {
 
     fn next(&mut self) -> Option<u8> {
         while self.next <= U8_MAX {
-            let current = cast_u8(self.next);
+            let current = self.next as u8;
 
             let contains = self.bitset.contains(current);
             self.next += 1;
@@ -132,12 +136,14 @@ impl<'a> Iterator for TinyBitSetIterator<'a> {
         let m2 = 0u64.wrapping_sub(1) << self.next.saturating_sub(64 * 2).max(64);
         let m3 = 0u64.wrapping_sub(1) << self.next.saturating_sub(64 * 3).max(64);
 
-        let c0 = cast_usize((m0 & self.bitset.data[0]).count_ones());
-        let c1 = cast_usize((m1 & self.bitset.data[1]).count_ones());
-        let c2 = cast_usize((m2 & self.bitset.data[2]).count_ones());
-        let c3 = cast_usize((m3 & self.bitset.data[3]).count_ones());
+        // usize is defined to be at least 16 bits wide, the following `as`
+        // casts should be ok for up to 2^16 ones in the whole array.
+        let c0 = (m0 & self.bitset.data[0]).count_ones() as usize;
+        let c1 = (m1 & self.bitset.data[1]).count_ones() as usize;
+        let c2 = (m2 & self.bitset.data[2]).count_ones() as usize;
+        let c3 = (m3 & self.bitset.data[3]).count_ones() as usize;
 
-        let size = c0.saturating_add(c1).saturating_add(c2).saturating_add(c3);
+        let size = c0 + c1 + c2 + c3;
 
         (size, Some(size))
     }
