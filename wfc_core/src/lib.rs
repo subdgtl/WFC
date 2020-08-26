@@ -261,7 +261,7 @@ impl World {
     pub fn observe<R: rand::Rng>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
         let mut min_entropy_slot_index_and_value: Option<(usize, usize)> = None;
         for (i, slot) in self.slots.iter().enumerate() {
-            let entropy = count_ones(slot);
+            let entropy = slot.len();
             // We can collapse anything with entropy >= 2. If entropy == 1, the
             // slot is already collapsed. If entropy is 0, we hit a
             // contradiction and can bail out early.
@@ -310,8 +310,7 @@ impl World {
         let mut lt1 = false;
         let mut gt1 = false;
         for slot in &self.slots {
-            let ones = count_ones(slot);
-            match ones.cmp(&1) {
+            match slot.len().cmp(&1) {
                 Ordering::Less => {
                     lt1 = true;
                 }
@@ -385,8 +384,8 @@ impl World {
                         }
                     }
 
-                    let slot_len = count_ones(slot);
-                    let new_slot_len = count_ones(&new_slot);
+                    let slot_len = slot.len();
+                    let new_slot_len = new_slot.len();
                     debug_assert!(slot_len > 0);
                     debug_assert!(slot_len >= new_slot_len);
 
@@ -558,10 +557,6 @@ impl World {
 
         (changed, contradiction)
     }
-}
-
-fn count_ones(bitset: &TinyBitSet) -> usize {
-    bitset.iter().count()
 }
 
 fn choose_random<R: rand::Rng>(bitset: &TinyBitSet, rng: &mut R) -> u32 {
