@@ -126,7 +126,7 @@ uint32_t wfc_observe(Wfc wfc, uint32_t max_attempts);
  * - `world_state_ptr` and `world_state_len` are used to construct a mutable slice. See
  *   `slice::from_raw_parts_mut`.
  */
-void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[8], uintptr_t world_state_len);
+void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[4], uintptr_t world_state_len);
 
 /**
  * Writes world state from `world_state_ptr` and `world_state_len` into the
@@ -176,5 +176,5 @@ void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[8], uintptr_t worl
  *   `slice::from_raw_parts`.
  */
 WfcWorldStateSetResult wfc_world_state_set(Wfc wfc,
-                                           const uint64_t (*world_state_ptr)[8],
+                                           const uint64_t (*world_state_ptr)[4],
                                            uintptr_t world_state_len);

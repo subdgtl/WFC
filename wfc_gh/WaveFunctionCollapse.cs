@@ -186,6 +186,12 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             adjacencyRules[i] = rule;
         }
 
+        if (nameToModule.Count > 256) {
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                              "Too many modules. Maximum allowed is 256");
+            return;
+        }
+
         //
         // -- World dimensions --
         //
@@ -272,10 +278,6 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                     slotState.slot_state[1] = 0;
                     slotState.slot_state[2] = 0;
                     slotState.slot_state[3] = 0;
-                    slotState.slot_state[4] = 0;
-                    slotState.slot_state[5] = 0;
-                    slotState.slot_state[6] = 0;
-                    slotState.slot_state[7] = 0;
                 }
 
                 IList branchValues = worldStateTree.get_Branch(branchIndex);
@@ -287,7 +289,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                         UInt32 bitIdx = module % 64;
                         UInt64 mask = (UInt64)1 << (Int32)bitIdx;
 
-                        Debug.Assert(blkIdx < 8);
+                        Debug.Assert(blkIdx < 4);
                         unsafe
                         {
                             slotState.slot_state[blkIdx] |= mask;
@@ -434,7 +436,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             {
                 // Assume the result is deterministic and only take the first set bit
                 Int64 module = Int64.MinValue;
-                for (Int32 blkIdx = 0; blkIdx < 8 && module == Int64.MinValue; ++blkIdx)
+                for (Int32 blkIdx = 0; blkIdx < 4 && module == Int64.MinValue; ++blkIdx)
                 {
                     for (Int32 bitIdx = 0; bitIdx < 64 && module == Int64.MinValue; ++bitIdx)
                     {
@@ -509,11 +511,11 @@ internal enum WfcWorldStateSetResult : UInt32
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct SlotState
 {
-    public fixed UInt64 slot_state[8];
+    public fixed UInt64 slot_state[4];
 
     public override string ToString()
     {
-        StringBuilder b = new StringBuilder("Slot state {", 128);
+        StringBuilder b = new StringBuilder("Slot state { ", 64);
 
         b.Append("[");
         b.Append(slot_state[0]);
@@ -523,14 +525,6 @@ internal unsafe struct SlotState
         b.Append(slot_state[2]);
         b.Append("][");
         b.Append(slot_state[3]);
-        b.Append("][");
-        b.Append(slot_state[4]);
-        b.Append("][");
-        b.Append(slot_state[5]);
-        b.Append("][");
-        b.Append(slot_state[6]);
-        b.Append("][");
-        b.Append(slot_state[7]);
         b.Append("] }");
 
         return b.ToString();
