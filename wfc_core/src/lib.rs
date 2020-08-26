@@ -1,3 +1,4 @@
+mod bitset;
 mod convert;
 
 pub use rand;
@@ -7,14 +8,8 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
-use crate::convert::{cast_u32, cast_usize};
-
-// FIXME: hibitset::Bitset is quite a lot of overhead if we don't utilize its
-// dynamic memory. We could make a `SmallBitSet` which doesn't dynamically
-// allocate for small amount of elements, if we find out our number of modules
-// is usually below some reasonable number, like 256 or 512, as hibitset::BitSet
-// is already quite large: 640 bits (with 64bit usize) = usize + 3 * 3 * usize.
-use hibitset::{BitSet, BitSetLike as _};
+use crate::bitset::TinyBitSet;
+use crate::convert::{cast_u32, cast_u8, cast_usize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -107,7 +102,7 @@ impl fmt::Display for WorldStatus {
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
-    slots: Vec<BitSet>,
+    slots: Vec<TinyBitSet>,
     module_count: usize,
 }
 
@@ -119,15 +114,15 @@ impl World {
 
         assert!(!adjacencies.is_empty());
 
-        let mut modules = BitSet::new();
+        let mut modules = TinyBitSet::zeroes();
         let mut module_count = 0;
         let mut module_max = 0;
 
         for adjacency in &adjacencies {
-            if !modules.add(adjacency.module_low) {
+            if modules.add(cast_u8(adjacency.module_low)) {
                 module_count += 1;
             }
-            if !modules.add(adjacency.module_high) {
+            if modules.add(cast_u8(adjacency.module_high)) {
                 module_count += 1;
             }
 
@@ -151,7 +146,7 @@ impl World {
         let mut slots = Vec::with_capacity(slot_count);
 
         for _ in 0..slot_count {
-            slots.push(modules.clone());
+            slots.push(modules);
         }
 
         Self {
@@ -185,7 +180,7 @@ impl World {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &self.slots[index];
 
-        slot.contains(module)
+        slot.contains(cast_u8(module))
     }
 
     pub fn set_slot_module(&mut self, pos: [u16; 3], module: u32, value: bool) {
@@ -193,9 +188,9 @@ impl World {
         let slot = &mut self.slots[index];
 
         if value {
-            slot.add(module);
+            slot.add(cast_u8(module));
         } else {
-            slot.remove(module);
+            slot.remove(cast_u8(module));
         }
     }
 
@@ -205,9 +200,9 @@ impl World {
 
         for module in 0..cast_u32(self.module_count) {
             if value {
-                slot.add(module);
+                slot.add(cast_u8(module));
             } else {
-                slot.remove(module);
+                slot.remove(cast_u8(module));
             }
         }
     }
@@ -216,7 +211,7 @@ impl World {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &self.slots[index];
 
-        slot.iter()
+        slot.iter().map(u32::from)
     }
 
     /// Resets the world to initial state, where every slot has the possibility
@@ -224,7 +219,7 @@ impl World {
     pub fn reset(&mut self) {
         for slot in &mut self.slots {
             for module in 0..cast_u32(self.module_count) {
-                slot.add(module);
+                slot.add(cast_u8(module));
             }
         }
     }
@@ -296,7 +291,7 @@ impl World {
             let chosen_module = choose_random(min_entropy_slot, rng);
 
             min_entropy_slot.clear();
-            min_entropy_slot.add(chosen_module);
+            min_entropy_slot.add(cast_u8(chosen_module));
 
             let (changed, contradiction) = self.propagate_constraints(min_entropy_slot_index);
 
@@ -367,7 +362,7 @@ impl World {
                     // FIXME: @Optimization This is only allocated to
                     // appease the borrowchecker. Can we not allocate the
                     // bit difference using slice::split_at_mut or similar?
-                    let mut new_slot = BitSet::new();
+                    let mut new_slot = TinyBitSet::zeroes();
 
                     for adj in self
                         .adjacencies
@@ -375,16 +370,18 @@ impl World {
                         .filter(|adj| adj.kind == AdjacencyKind::from(s.search_direction))
                         .filter(|adj| {
                             if s.search_direction.is_positive() {
-                                slot_prev.contains(adj.module_low) && slot.contains(adj.module_high)
+                                slot_prev.contains(cast_u8(adj.module_low))
+                                    && slot.contains(cast_u8(adj.module_high))
                             } else {
-                                slot_prev.contains(adj.module_high) && slot.contains(adj.module_low)
+                                slot_prev.contains(cast_u8(adj.module_high))
+                                    && slot.contains(cast_u8(adj.module_low))
                             }
                         })
                     {
                         if s.search_direction.is_positive() {
-                            new_slot.add(adj.module_high);
+                            new_slot.add(cast_u8(adj.module_high));
                         } else {
-                            new_slot.add(adj.module_low);
+                            new_slot.add(cast_u8(adj.module_low));
                         }
                     }
 
@@ -563,13 +560,15 @@ impl World {
     }
 }
 
-fn count_ones(bit_set: &BitSet) -> usize {
-    bit_set.iter().count()
+fn count_ones(bitset: &TinyBitSet) -> usize {
+    bitset.iter().count()
 }
 
-fn choose_random<R: rand::Rng>(bit_set: &BitSet, rng: &mut R) -> u32 {
+fn choose_random<R: rand::Rng>(bitset: &TinyBitSet, rng: &mut R) -> u32 {
     use rand::seq::IteratorRandom as _;
-    bit_set.iter().choose(rng).unwrap()
+    let value = bitset.iter().choose(rng).unwrap();
+
+    u32::from(value)
 }
 
 pub fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
