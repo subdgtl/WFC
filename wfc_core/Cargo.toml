@@ -5,6 +5,4 @@ authors = ["yanchith <yanchi.toth@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-log = "0.4.11"
-png = "0.16.7"
-rand = "0.7.3"
+rand_core = "0.5.1"

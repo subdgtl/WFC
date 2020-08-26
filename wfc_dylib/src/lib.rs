@@ -9,7 +9,7 @@ mod convert;
 use std::mem;
 use std::slice;
 
-use wfc_core::rand::SeedableRng as _;
+use wfc_core::rand_core::SeedableRng as _;
 use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
 
 use crate::convert::{cast_u32, cast_usize};

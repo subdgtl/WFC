@@ -1,7 +1,7 @@
 mod bitvec;
 mod convert;
 
-pub use rand;
+pub use rand_core;
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -258,7 +258,7 @@ impl World {
         (world_changed, self.world_status())
     }
 
-    pub fn observe<R: rand::Rng>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
+    pub fn observe<R: rand_core::RngCore>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
         let mut min_entropy_slot_index_and_value: Option<(usize, usize)> = None;
         for (i, slot) in self.slots.iter().enumerate() {
             let entropy = slot.len();
@@ -391,13 +391,6 @@ impl World {
 
                     self.slots[s.slot_index] = new_slot;
 
-                    log::debug!(
-                        "INIT  {:>3?} {} -> {}",
-                        index_to_position(slots_len, self.dims, s.slot_index),
-                        slot_len,
-                        new_slot_len,
-                    );
-
                     if new_slot_len == 0 {
                         changed = true;
                         contradiction = true;
@@ -424,8 +417,6 @@ impl World {
                     s.search_state = SearchState::SearchRight;
 
                     if pos != pos_next {
-                        log::debug!("LEFT  {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -445,8 +436,6 @@ impl World {
                     s.search_state = SearchState::SearchFront;
 
                     if pos != pos_next {
-                        log::debug!("RIGHT {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -466,8 +455,6 @@ impl World {
                     s.search_state = SearchState::SearchBack;
 
                     if pos != pos_next {
-                        log::debug!("FRONT {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -487,8 +474,6 @@ impl World {
                     s.search_state = SearchState::SearchDown;
 
                     if pos != pos_next {
-                        log::debug!("BACK  {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -508,8 +493,6 @@ impl World {
                     s.search_state = SearchState::SearchUp;
 
                     if pos != pos_next {
-                        log::debug!("DOWN  {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -529,8 +512,6 @@ impl World {
                     s.search_state = SearchState::Done;
 
                     if pos != pos_next {
-                        log::debug!("UP    {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -543,10 +524,6 @@ impl World {
                     }
                 }
                 SearchState::Done => {
-                    log::debug!(
-                        "DONE  {:>3?}",
-                        index_to_position(slots_len, self.dims, s.slot_index),
-                    );
                     visited.remove(&s.slot_index);
                     stack.pop();
 
@@ -559,9 +536,21 @@ impl World {
     }
 }
 
-fn choose_random<R: rand::Rng>(bitvec: &TinyBitVec, rng: &mut R) -> u32 {
-    use rand::seq::IteratorRandom as _;
-    let value = bitvec.iter().choose(rng).unwrap();
+fn choose_random<R: rand_core::RngCore>(bitvec: &TinyBitVec, rng: &mut R) -> u32 {
+    let mut iter = bitvec.iter();
+
+    let (size_hint_low, size_hint_high) = iter.size_hint();
+    assert!(size_hint_low > 0);
+    assert_eq!(Some(size_hint_low), size_hint_high);
+
+    // Take 64 bits of random and possibly truncate when casting to usize on
+    // non-64bit platforms.
+    let rand_num = rng.next_u64() as usize;
+
+    // FIXME: @Correctness How should we correctly create the index from the
+    // random number to preserve the uniformity of the sampled distribution?
+    let index = rand_num % size_hint_low;
+    let value = iter.nth(index).unwrap();
 
     u32::from(value)
 }
