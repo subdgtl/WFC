@@ -1,7 +1,5 @@
 use std::mem;
 
-const U8_MAX: u16 = u8::MAX as u16;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TinyBitVec {
     data: [u64; 4],
@@ -23,7 +21,7 @@ impl TinyBitVec {
     /// Returns, whether the bit vector has a bit set.
     pub fn contains(&self, index: u8) -> bool {
         let index = usize::from(index);
-        debug_assert!(index <= mem::size_of::<[u64; 4]>() * 8);
+        debug_assert!(index < mem::size_of::<[u64; 4]>() * 8);
 
         let blk_index = index / 64;
         let bit_index = index % 64;
@@ -36,7 +34,7 @@ impl TinyBitVec {
     /// previously set.
     pub fn add(&mut self, index: u8) -> bool {
         let index = usize::from(index);
-        debug_assert!(index <= mem::size_of::<[u64; 4]>() * 8);
+        debug_assert!(index < mem::size_of::<[u64; 4]>() * 8);
 
         let blk_index = index / 64;
         let bit_index = index % 64;
@@ -51,7 +49,7 @@ impl TinyBitVec {
     /// previously set.
     pub fn remove(&mut self, index: u8) -> bool {
         let index = usize::from(index);
-        debug_assert!(index <= mem::size_of::<[u64; 4]>() * 8);
+        debug_assert!(index < mem::size_of::<[u64; 4]>() * 8);
 
         let blk_index = index / 64;
         let bit_index = index % 64;
@@ -130,7 +128,7 @@ impl<'a> Iterator for TinyBitVecIterator<'a> {
     type Item = u8;
 
     fn next(&mut self) -> Option<u8> {
-        while self.next <= U8_MAX {
+        while self.next <= u16::from(u8::MAX) {
             let index = self.next as u8;
 
             let contains = self.bitvec.contains(index);
