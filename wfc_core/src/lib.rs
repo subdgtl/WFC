@@ -358,11 +358,7 @@ impl World {
                     let slot = &self.slots[s.slot_index];
                     let slot_prev = &self.slots[s.slot_index_prev];
 
-                    // FIXME: @Optimization This is only allocated to
-                    // appease the borrowchecker. Can we not allocate the
-                    // bit difference using slice::split_at_mut or similar?
                     let mut new_slot = TinyBitVec::zeros();
-
                     for adj in self
                         .adjacencies
                         .iter()
