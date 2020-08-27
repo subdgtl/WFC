@@ -12,11 +12,11 @@ use std::slice;
 use wfc_core::rand_core::SeedableRng as _;
 use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
 
-use crate::convert::{cast_u32, cast_usize};
+use crate::convert::{cast_u8, cast_usize};
 
 /// Maximum number of modules supported to be sent with `wfc_world_state_get`
 /// and `wfc_world_state_set`.
-const WFC_MODULE_MAX: usize = mem::size_of::<[u64; 4]>() * 8;
+const MAX_MODULE_COUNT: usize = mem::size_of::<[u64; 4]>() * 8;
 
 // FIXME: Adjacency and AdjacencyKind are duplicated here only because otherwise
 // cbindgen can't find them easily in wfc_core. cbindgen could possbily be
@@ -45,8 +45,8 @@ impl Into<AdjacencyKind> for AdjacencyRuleKind {
 #[derive(Clone, Copy)]
 pub struct AdjacencyRule {
     pub kind: AdjacencyRuleKind,
-    pub module_low: u32,
-    pub module_high: u32,
+    pub module_low: u8,
+    pub module_high: u8,
 }
 
 impl Into<Adjacency> for AdjacencyRule {
@@ -135,7 +135,7 @@ pub unsafe extern "C" fn wfc_init(
         .collect();
     let world_initial = World::new([world_x, world_y, world_z], adjacencies);
 
-    if world_initial.module_count() > WFC_MODULE_MAX {
+    if world_initial.module_count() > MAX_MODULE_COUNT {
         return WfcInitResult::TooManyModules;
     }
 
@@ -395,7 +395,7 @@ fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 4]) {
             let value = blk & (1 << bit_index);
 
             if value != 0 {
-                world.set_slot_module(pos, cast_u32(module), true);
+                world.set_slot_module(pos, cast_u8(module), true);
             }
         }
     }

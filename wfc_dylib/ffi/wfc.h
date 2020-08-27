@@ -33,8 +33,8 @@ typedef WfcState *Wfc;
 
 typedef struct {
   AdjacencyRuleKind kind;
-  uint32_t module_low;
-  uint32_t module_high;
+  uint8_t module_low;
+  uint8_t module_high;
 } AdjacencyRule;
 
 /**

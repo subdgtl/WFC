@@ -34,8 +34,8 @@ impl From<Direction> for AdjacencyKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Adjacency {
     pub kind: AdjacencyKind,
-    pub module_low: u32,
-    pub module_high: u32,
+    pub module_low: u8,
+    pub module_high: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,10 +119,10 @@ impl World {
         let mut module_max = 0;
 
         for adjacency in &adjacencies {
-            if modules.add(cast_u8(adjacency.module_low)) {
+            if modules.add(adjacency.module_low) {
                 module_count += 1;
             }
-            if modules.add(cast_u8(adjacency.module_high)) {
+            if modules.add(adjacency.module_high) {
                 module_count += 1;
             }
 
@@ -176,21 +176,21 @@ impl World {
         self.module_count
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: u32) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: u8) -> bool {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &self.slots[index];
 
-        slot.contains(cast_u8(module))
+        slot.contains(module)
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u32, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u8, value: bool) {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &mut self.slots[index];
 
         if value {
-            slot.add(cast_u8(module));
+            slot.add(module);
         } else {
-            slot.remove(cast_u8(module));
+            slot.remove(module);
         }
     }
 
@@ -207,19 +207,19 @@ impl World {
         }
     }
 
-    pub fn slot_modules_iter<'a>(&'a self, pos: [u16; 3]) -> impl Iterator<Item = u32> + 'a {
+    pub fn slot_modules_iter<'a>(&'a self, pos: [u16; 3]) -> impl Iterator<Item = u8> + 'a {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &self.slots[index];
 
-        slot.iter().map(u32::from)
+        slot.iter()
     }
 
     /// Resets the world to initial state, where every slot has the possibility
     /// to contain any module.
     pub fn reset(&mut self) {
         for slot in &mut self.slots {
-            for module in 0..cast_u32(self.module_count) {
-                slot.add(cast_u8(module));
+            for module in 0..cast_u8(self.module_count) {
+                slot.add(module);
             }
         }
     }
@@ -536,7 +536,7 @@ impl World {
     }
 }
 
-fn choose_random<R: rand_core::RngCore>(bitvec: &TinyBitVec, rng: &mut R) -> u32 {
+fn choose_random<R: rand_core::RngCore>(bitvec: &TinyBitVec, rng: &mut R) -> u8 {
     let mut iter = bitvec.iter();
 
     let (size_hint_low, size_hint_high) = iter.size_hint();
@@ -550,9 +550,7 @@ fn choose_random<R: rand_core::RngCore>(bitvec: &TinyBitVec, rng: &mut R) -> u32
     // FIXME: @Correctness How should we correctly create the index from the
     // random number to preserve the uniformity of the sampled distribution?
     let index = rand_num % size_hint_low;
-    let value = iter.nth(index).unwrap();
-
-    u32::from(value)
+    iter.nth(index).unwrap()
 }
 
 pub fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
