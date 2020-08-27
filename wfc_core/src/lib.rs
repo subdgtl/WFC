@@ -9,7 +9,7 @@ use std::convert::TryFrom;
 use std::fmt;
 
 use crate::bitvec::TinyBitVec;
-use crate::convert::{cast_u32, cast_u8, cast_usize};
+use crate::convert::{cast_u8, cast_usize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -198,11 +198,11 @@ impl World {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &mut self.slots[index];
 
-        for module in 0..cast_u32(self.module_count) {
+        for module in 0..cast_u8(self.module_count) {
             if value {
-                slot.add(cast_u8(module));
+                slot.add(module);
             } else {
-                slot.remove(cast_u8(module));
+                slot.remove(module);
             }
         }
     }
@@ -291,7 +291,7 @@ impl World {
             let chosen_module = choose_random(min_entropy_slot, rng);
 
             min_entropy_slot.clear();
-            min_entropy_slot.add(cast_u8(chosen_module));
+            min_entropy_slot.add(chosen_module);
 
             let (changed, contradiction) = self.propagate_constraints(min_entropy_slot_index);
 
@@ -369,18 +369,16 @@ impl World {
                         .filter(|adj| adj.kind == AdjacencyKind::from(s.search_direction))
                         .filter(|adj| {
                             if s.search_direction.is_positive() {
-                                slot_prev.contains(cast_u8(adj.module_low))
-                                    && slot.contains(cast_u8(adj.module_high))
+                                slot_prev.contains(adj.module_low) && slot.contains(adj.module_high)
                             } else {
-                                slot_prev.contains(cast_u8(adj.module_high))
-                                    && slot.contains(cast_u8(adj.module_low))
+                                slot_prev.contains(adj.module_high) && slot.contains(adj.module_low)
                             }
                         })
                     {
                         if s.search_direction.is_positive() {
-                            new_slot.add(cast_u8(adj.module_high));
+                            new_slot.add(adj.module_high);
                         } else {
-                            new_slot.add(cast_u8(adj.module_low));
+                            new_slot.add(adj.module_low);
                         }
                     }
 
