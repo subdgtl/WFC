@@ -18,7 +18,7 @@ impl TinyBitVec {
         }
     }
 
-    /// Returns, whether the bit vector has a bit set.
+    /// Returns whether the bit vector has a bit set.
     pub fn contains(&self, index: u8) -> bool {
         let index = usize::from(index);
         debug_assert!(index < mem::size_of::<[u64; 4]>() * 8);
