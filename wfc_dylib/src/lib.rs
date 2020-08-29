@@ -116,7 +116,8 @@ pub unsafe extern "C" fn wfc_init(
     world_x: u16,
     world_y: u16,
     world_z: u16,
-    rng_seed: [u8; 16],
+    rng_seed_low: u64,
+    rng_seed_high: u64,
 ) -> WfcInitResult {
     let adjacency_rules = {
         assert!(!adjacency_rules_ptr.is_null());
@@ -140,6 +141,9 @@ pub unsafe extern "C" fn wfc_init(
     }
 
     let world = world_initial.clone();
+    let mut rng_seed = [0u8; 16];
+    rng_seed[0..8].copy_from_slice(&rng_seed_low.to_le_bytes());
+    rng_seed[8..16].copy_from_slice(&rng_seed_high.to_le_bytes());
     let rng = rand_pcg::Pcg32::from_seed(rng_seed);
 
     let wfc_state_ptr = Box::into_raw(Box::new(WfcState {

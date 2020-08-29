@@ -309,23 +309,26 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         //
         // wfc_init needs 128 bits worth of random seed, but that is tricky to provide from GH.
         // We let GH provide an int, use it to seed a C# Random, get 16 bytes of data from that
-        // and copy those to the FFI ready RngSeed.rng_seed fixed buffer.
+        // and copy those into two u64's.
 
-        int ghRandomSeed = 0;
-        DA.GetData(IN_PARAM_RANDOM_SEED, ref ghRandomSeed);
+        int randomSeed = 0;
+        DA.GetData(IN_PARAM_RANDOM_SEED, ref randomSeed);
 
-        Random ghRandom = new Random(ghRandomSeed);
-        byte[] rngSeedArr = new byte[16];
-        ghRandom.NextBytes(rngSeedArr);
+        Random random = new Random(randomSeed);
+        byte[] rngSeedLowArr = new byte[8];
+        byte[] rngSeedHighArr = new byte[8];
+        random.NextBytes(rngSeedLowArr);
+        random.NextBytes(rngSeedHighArr);
 
-        RngSeed rngSeed;
-        unsafe
-        {
-            for (int i = 0; i < 16; ++i)
-            {
-                rngSeed.rng_seed[i] = rngSeedArr[i];
-            }
+        if (!BitConverter.IsLittleEndian) {
+            // If we are running on a BE machine, we need to reverse the bytes,
+            // because low and high are defined to always be LE.
+            Array.Reverse(rngSeedLowArr);
+            Array.Reverse(rngSeedHighArr);
         }
+
+        ulong rngSeedLow = BitConverter.ToUInt64(rngSeedLowArr, 0);
+        ulong rngSeedHigh = BitConverter.ToUInt64(rngSeedHighArr, 0);
 
         //
         // -- Max attempts --
@@ -350,7 +353,8 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                                                        worldX,
                                                        worldY,
                                                        worldZ,
-                                                       rngSeed);
+                                                       rngSeedLow,
+                                                       rngSeedHigh);
 
                 switch (result)
                 {
@@ -485,12 +489,6 @@ internal struct AdjacencyRule
     public byte module_high;
 }
 
-[StructLayout(LayoutKind.Sequential)]
-internal unsafe struct RngSeed
-{
-    public fixed byte rng_seed[16];
-}
-
 internal enum WfcInitResult : uint
 {
     Ok = 0,
@@ -564,10 +562,11 @@ internal class Native
     internal static unsafe extern WfcInitResult wfc_init(IntPtr* wfc_ptr,
                                                          AdjacencyRule* adjacency_rules_ptr,
                                                          UIntPtr adjacency_rules_len,
-                                                         ushort world_x,
-                                                         ushort world_y,
-                                                         ushort world_z,
-                                                         RngSeed rng_seed);
+                                                         UInt16 world_x,
+                                                         UInt16 world_y,
+                                                         UInt16 world_z,
+                                                         ulong rngSeedLow,
+                                                         ulong rngSeedHigh);
 
     [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
     internal static extern void wfc_free(IntPtr wfc);
