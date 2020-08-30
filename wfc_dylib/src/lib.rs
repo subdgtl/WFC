@@ -9,14 +9,14 @@ mod convert;
 use std::mem;
 use std::slice;
 
-use wfc_core::rand::SeedableRng as _;
+use wfc_core::rand_core::SeedableRng as _;
 use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
 
-use crate::convert::{cast_u32, cast_usize};
+use crate::convert::{cast_u8, cast_usize};
 
 /// Maximum number of modules supported to be sent with `wfc_world_state_get`
 /// and `wfc_world_state_set`.
-const WFC_MODULE_MAX: usize = mem::size_of::<[u64; 8]>() * 8;
+const MAX_MODULE_COUNT: usize = mem::size_of::<[u64; 4]>() * 8;
 
 // FIXME: Adjacency and AdjacencyKind are duplicated here only because otherwise
 // cbindgen can't find them easily in wfc_core. cbindgen could possbily be
@@ -45,8 +45,8 @@ impl Into<AdjacencyKind> for AdjacencyRuleKind {
 #[derive(Clone, Copy)]
 pub struct AdjacencyRule {
     pub kind: AdjacencyRuleKind,
-    pub module_low: u32,
-    pub module_high: u32,
+    pub module_low: u8,
+    pub module_high: u8,
 }
 
 impl Into<Adjacency> for AdjacencyRule {
@@ -135,7 +135,7 @@ pub unsafe extern "C" fn wfc_init(
         .collect();
     let world_initial = World::new([world_x, world_y, world_z], adjacencies);
 
-    if world_initial.module_count() > WFC_MODULE_MAX {
+    if world_initial.module_count() > MAX_MODULE_COUNT {
         return WfcInitResult::TooManyModules;
     }
 
@@ -285,7 +285,7 @@ pub enum WfcWorldStateSetResult {
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_set(
     wfc: Wfc,
-    world_state_ptr: *const [u64; 8],
+    world_state_ptr: *const [u64; 4],
     world_state_len: usize,
 ) -> WfcWorldStateSetResult {
     let wfc_state = {
@@ -296,7 +296,7 @@ pub unsafe extern "C" fn wfc_world_state_set(
     let world_state = {
         assert!(!world_state_ptr.is_null());
         assert_ne!(world_state_len, 0);
-        assert!(world_state_len * mem::size_of::<[u64; 8]>() < isize::MAX as usize);
+        assert!(world_state_len * mem::size_of::<[u64; 4]>() < isize::MAX as usize);
         slice::from_raw_parts(world_state_ptr, world_state_len)
     };
 
@@ -355,7 +355,7 @@ pub unsafe extern "C" fn wfc_world_state_set(
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_get(
     wfc: Wfc,
-    world_state_ptr: *mut [u64; 8],
+    world_state_ptr: *mut [u64; 4],
     world_state_len: usize,
 ) {
     let wfc_state = {
@@ -366,14 +366,14 @@ pub unsafe extern "C" fn wfc_world_state_get(
     let world_state = {
         assert!(!world_state_ptr.is_null());
         assert_ne!(world_state_len, 0);
-        assert!(world_state_len * mem::size_of::<[u64; 8]>() < isize::MAX as usize);
+        assert!(world_state_len * mem::size_of::<[u64; 4]>() < isize::MAX as usize);
         slice::from_raw_parts_mut(world_state_ptr, world_state_len)
     };
 
     export_world_state(&wfc_state.world, world_state);
 }
 
-fn import_world_state(world: &mut World, world_state: &[[u64; 8]]) {
+fn import_world_state(world: &mut World, world_state: &[[u64; 4]]) {
     let [dim_x, dim_y, dim_z] = world.dims();
     assert_eq!(
         world_state.len(),
@@ -386,7 +386,7 @@ fn import_world_state(world: &mut World, world_state: &[[u64; 8]]) {
     }
 }
 
-fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 8]) {
+fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 4]) {
     world.set_slot_modules(pos, false);
 
     for (blk_index, blk) in slot_state.iter().enumerate() {
@@ -395,13 +395,13 @@ fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 8]) {
             let value = blk & (1 << bit_index);
 
             if value != 0 {
-                world.set_slot_module(pos, cast_u32(module), true);
+                world.set_slot_module(pos, cast_u8(module), true);
             }
         }
     }
 }
 
-fn export_world_state(world: &World, world_state: &mut [[u64; 8]]) {
+fn export_world_state(world: &World, world_state: &mut [[u64; 4]]) {
     let world_state_len = world_state.len();
     let [dim_x, dim_y, dim_z] = world.dims();
     assert_eq!(
@@ -415,8 +415,8 @@ fn export_world_state(world: &World, world_state: &mut [[u64; 8]]) {
     }
 }
 
-fn export_slot_state(world: &World, pos: [u16; 3], slot_state: &mut [u64; 8]) {
-    static ZERO_SLOT: &[u64; 8] = &[0; 8];
+fn export_slot_state(world: &World, pos: [u16; 3], slot_state: &mut [u64; 4]) {
+    static ZERO_SLOT: &[u64; 4] = &[0; 4];
     slot_state.copy_from_slice(ZERO_SLOT);
 
     for module in world.slot_modules_iter(pos) {

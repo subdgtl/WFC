@@ -56,8 +56,8 @@ impl From<csv::Error> for AdjacencyRulesImportError {
 
 pub struct AdjacencyRulesImportResult {
     pub adjacencies: Vec<Adjacency>,
-    pub name_to_module: HashMap<String, u32>,
-    pub module_to_name: HashMap<u32, String>,
+    pub name_to_module: HashMap<String, u8>,
+    pub module_to_name: HashMap<u8, String>,
 }
 
 pub fn import_adjacency_rules<R: io::Read>(
@@ -66,8 +66,8 @@ pub fn import_adjacency_rules<R: io::Read>(
     log::info!("Importing adjacency rules CSV");
 
     let mut next_module = 0;
-    let mut module_to_name: HashMap<u32, String> = HashMap::new();
-    let mut name_to_module: HashMap<String, u32> = HashMap::new();
+    let mut module_to_name: HashMap<u8, String> = HashMap::new();
+    let mut name_to_module: HashMap<String, u8> = HashMap::new();
 
     let mut adjacencies: Vec<Adjacency> = Vec::new();
     let mut reader = csv::ReaderBuilder::new()
@@ -211,7 +211,7 @@ pub fn import_world_state<R: io::BufRead>(
     mut r: R,
     world: &mut World,
     dims: [u16; 3],
-    name_to_module: &HashMap<String, u32>,
+    name_to_module: &HashMap<String, u8>,
 ) -> Result<(), InitialStateImportError> {
     log::info!("Importing initial state text");
 
@@ -257,7 +257,7 @@ pub fn import_world_state<R: io::BufRead>(
             for (x, slot_match) in slot_regex.find_iter(&line_buffer).enumerate() {
                 let slot_str = slot_match.as_str();
 
-                let mut slot: TinyVec<[u32; 4]> = TinyVec::new();
+                let mut slot: TinyVec<[u8; 8]> = TinyVec::new();
                 match slot_str {
                     SLOT_NAME_WILDCARD => slot.extend(name_to_module.values().copied()),
                     _ => {
@@ -305,7 +305,7 @@ pub fn import_world_state<R: io::BufRead>(
 pub fn export_world_state<W: io::Write>(
     w: &mut W,
     world: &World,
-    module_to_name: &HashMap<u32, String>,
+    module_to_name: &HashMap<u8, String>,
 ) {
     let dims = world.dims();
 
@@ -339,7 +339,7 @@ pub fn export_world_state<W: io::Write>(
     for z in (0..dims[2]).rev() {
         for y in (0..dims[1]).rev() {
             for x in 0..dims[0] {
-                let modules_in_slot: TinyVec<[u32; 4]> =
+                let modules_in_slot: TinyVec<[u8; 8]> =
                     world.slot_modules_iter([x, y, z]).collect();
 
                 let slot_width = if x == dims[0] - 1 {
@@ -362,8 +362,8 @@ pub fn export_world_state<W: io::Write>(
 
 fn write_modules_in_slot<W: fmt::Write>(
     w: &mut W,
-    modules_in_slot: &[u32],
-    module_to_name: &HashMap<u32, String>,
+    modules_in_slot: &[u8],
+    module_to_name: &HashMap<u8, String>,
 ) {
     write!(w, "[").unwrap();
 

@@ -1,20 +1,15 @@
+mod bitvec;
 mod convert;
 
-pub use rand;
+pub use rand_core;
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
-use crate::convert::{cast_u32, cast_usize};
-
-// FIXME: hibitset::Bitset is quite a lot of overhead if we don't utilize its
-// dynamic memory. We could make a `SmallBitSet` which doesn't dynamically
-// allocate for small amount of elements, if we find out our number of modules
-// is usually below some reasonable number, like 256 or 512, as hibitset::BitSet
-// is already quite large: 640 bits (with 64bit usize) = usize + 3 * 3 * usize.
-use hibitset::{BitSet, BitSetLike as _};
+use crate::bitvec::TinyBitVec;
+use crate::convert::{cast_u8, cast_usize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -39,8 +34,8 @@ impl From<Direction> for AdjacencyKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Adjacency {
     pub kind: AdjacencyKind,
-    pub module_low: u32,
-    pub module_high: u32,
+    pub module_low: u8,
+    pub module_high: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,7 +102,7 @@ impl fmt::Display for WorldStatus {
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
-    slots: Vec<BitSet>,
+    slots: Vec<TinyBitVec>,
     module_count: usize,
 }
 
@@ -119,15 +114,15 @@ impl World {
 
         assert!(!adjacencies.is_empty());
 
-        let mut modules = BitSet::new();
+        let mut modules = TinyBitVec::zeros();
         let mut module_count = 0;
         let mut module_max = 0;
 
         for adjacency in &adjacencies {
-            if !modules.add(adjacency.module_low) {
+            if modules.add(adjacency.module_low) {
                 module_count += 1;
             }
-            if !modules.add(adjacency.module_high) {
+            if modules.add(adjacency.module_high) {
                 module_count += 1;
             }
 
@@ -151,7 +146,7 @@ impl World {
         let mut slots = Vec::with_capacity(slot_count);
 
         for _ in 0..slot_count {
-            slots.push(modules.clone());
+            slots.push(modules);
         }
 
         Self {
@@ -181,14 +176,14 @@ impl World {
         self.module_count
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: u32) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: u8) -> bool {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &self.slots[index];
 
         slot.contains(module)
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u32, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u8, value: bool) {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &mut self.slots[index];
 
@@ -203,7 +198,7 @@ impl World {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &mut self.slots[index];
 
-        for module in 0..cast_u32(self.module_count) {
+        for module in 0..cast_u8(self.module_count) {
             if value {
                 slot.add(module);
             } else {
@@ -212,7 +207,7 @@ impl World {
         }
     }
 
-    pub fn slot_modules_iter<'a>(&'a self, pos: [u16; 3]) -> impl Iterator<Item = u32> + 'a {
+    pub fn slot_modules_iter<'a>(&'a self, pos: [u16; 3]) -> impl Iterator<Item = u8> + 'a {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &self.slots[index];
 
@@ -223,7 +218,7 @@ impl World {
     /// to contain any module.
     pub fn reset(&mut self) {
         for slot in &mut self.slots {
-            for module in 0..cast_u32(self.module_count) {
+            for module in 0..cast_u8(self.module_count) {
                 slot.add(module);
             }
         }
@@ -263,10 +258,10 @@ impl World {
         (world_changed, self.world_status())
     }
 
-    pub fn observe<R: rand::Rng>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
+    pub fn observe<R: rand_core::RngCore>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
         let mut min_entropy_slot_index_and_value: Option<(usize, usize)> = None;
         for (i, slot) in self.slots.iter().enumerate() {
-            let entropy = count_ones(slot);
+            let entropy = slot.len();
             // We can collapse anything with entropy >= 2. If entropy == 1, the
             // slot is already collapsed. If entropy is 0, we hit a
             // contradiction and can bail out early.
@@ -315,8 +310,7 @@ impl World {
         let mut lt1 = false;
         let mut gt1 = false;
         for slot in &self.slots {
-            let ones = count_ones(slot);
-            match ones.cmp(&1) {
+            match slot.len().cmp(&1) {
                 Ordering::Less => {
                     lt1 = true;
                 }
@@ -364,11 +358,7 @@ impl World {
                     let slot = &self.slots[s.slot_index];
                     let slot_prev = &self.slots[s.slot_index_prev];
 
-                    // FIXME: @Optimization This is only allocated to
-                    // appease the borrowchecker. Can we not allocate the
-                    // bit difference using slice::split_at_mut or similar?
-                    let mut new_slot = BitSet::new();
-
+                    let mut new_slot = TinyBitVec::zeros();
                     for adj in self
                         .adjacencies
                         .iter()
@@ -388,19 +378,12 @@ impl World {
                         }
                     }
 
-                    let slot_len = count_ones(slot);
-                    let new_slot_len = count_ones(&new_slot);
+                    let slot_len = slot.len();
+                    let new_slot_len = new_slot.len();
                     debug_assert!(slot_len > 0);
                     debug_assert!(slot_len >= new_slot_len);
 
                     self.slots[s.slot_index] = new_slot;
-
-                    log::debug!(
-                        "INIT  {:>3?} {} -> {}",
-                        index_to_position(slots_len, self.dims, s.slot_index),
-                        slot_len,
-                        new_slot_len,
-                    );
 
                     if new_slot_len == 0 {
                         changed = true;
@@ -428,8 +411,6 @@ impl World {
                     s.search_state = SearchState::SearchRight;
 
                     if pos != pos_next {
-                        log::debug!("LEFT  {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -449,8 +430,6 @@ impl World {
                     s.search_state = SearchState::SearchFront;
 
                     if pos != pos_next {
-                        log::debug!("RIGHT {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -470,8 +449,6 @@ impl World {
                     s.search_state = SearchState::SearchBack;
 
                     if pos != pos_next {
-                        log::debug!("FRONT {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -491,8 +468,6 @@ impl World {
                     s.search_state = SearchState::SearchDown;
 
                     if pos != pos_next {
-                        log::debug!("BACK  {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -512,8 +487,6 @@ impl World {
                     s.search_state = SearchState::SearchUp;
 
                     if pos != pos_next {
-                        log::debug!("DOWN  {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -533,8 +506,6 @@ impl World {
                     s.search_state = SearchState::Done;
 
                     if pos != pos_next {
-                        log::debug!("UP    {:>3?} {:>3?}", pos, pos_next);
-
                         let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
@@ -547,10 +518,6 @@ impl World {
                     }
                 }
                 SearchState::Done => {
-                    log::debug!(
-                        "DONE  {:>3?}",
-                        index_to_position(slots_len, self.dims, s.slot_index),
-                    );
                     visited.remove(&s.slot_index);
                     stack.pop();
 
@@ -563,13 +530,21 @@ impl World {
     }
 }
 
-fn count_ones(bit_set: &BitSet) -> usize {
-    bit_set.iter().count()
-}
+fn choose_random<R: rand_core::RngCore>(bitvec: &TinyBitVec, rng: &mut R) -> u8 {
+    let mut iter = bitvec.iter();
 
-fn choose_random<R: rand::Rng>(bit_set: &BitSet, rng: &mut R) -> u32 {
-    use rand::seq::IteratorRandom as _;
-    bit_set.iter().choose(rng).unwrap()
+    let (size_hint_low, size_hint_high) = iter.size_hint();
+    assert!(size_hint_low > 0);
+    assert_eq!(Some(size_hint_low), size_hint_high);
+
+    // Take 64 bits of random and possibly truncate when casting to usize on
+    // non-64bit platforms.
+    let rand_num = rng.next_u64() as usize;
+
+    // FIXME: @Correctness How should we correctly create the index from the
+    // random number to preserve the uniformity of the sampled distribution?
+    let index = rand_num % size_hint_low;
+    iter.nth(index).unwrap()
 }
 
 pub fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {

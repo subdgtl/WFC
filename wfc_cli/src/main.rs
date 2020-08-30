@@ -9,7 +9,7 @@ use std::path::Path;
 use std::process;
 
 use clap::Clap as _;
-use wfc_core::rand::SeedableRng as _;
+use wfc_core::rand_core::SeedableRng as _;
 use wfc_core::{World, WorldStatus};
 
 // This is the same random seed wfc_gh will produce for its default seed.

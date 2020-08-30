@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Grasshopper;
@@ -13,18 +12,18 @@ using Grasshopper.Kernel.Types;
 public class GH_WaveFunctionCollapse3D : GH_Component
 {
 
-    private const Int32 IN_PARAM_RULE_AXIS = 0;
-    private const Int32 IN_PARAM_RULE_LOW = 1;
-    private const Int32 IN_PARAM_RULE_HIGH = 2;
-    private const Int32 IN_PARAM_WORLD_X = 3;
-    private const Int32 IN_PARAM_WORLD_Y = 4;
-    private const Int32 IN_PARAM_WORLD_Z = 5;
-    private const Int32 IN_PARAM_WORLD_STATE = 6;
-    private const Int32 IN_PARAM_RANDOM_SEED = 7;
-    private const Int32 IN_PARAM_MAX_ATTEMPTS = 8;
+    private const int IN_PARAM_RULE_AXIS = 0;
+    private const int IN_PARAM_RULE_LOW = 1;
+    private const int IN_PARAM_RULE_HIGH = 2;
+    private const int IN_PARAM_WORLD_X = 3;
+    private const int IN_PARAM_WORLD_Y = 4;
+    private const int IN_PARAM_WORLD_Z = 5;
+    private const int IN_PARAM_WORLD_STATE = 6;
+    private const int IN_PARAM_RANDOM_SEED = 7;
+    private const int IN_PARAM_MAX_ATTEMPTS = 8;
 
-    private const Int32 OUT_PARAM_DEBUG_OUTPUT = 0;
-    private const Int32 OUT_PARAM_WORLD_STATE = 1;
+    private const int OUT_PARAM_DEBUG_OUTPUT = 0;
+    private const int OUT_PARAM_WORLD_STATE = 1;
     public GH_WaveFunctionCollapse3D() : base("Wave Function Collapse 3D",
                                               "WFC3",
                                               "Solver for the Wave Function Collapse algorithm in cubic voxel space",
@@ -112,8 +111,8 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         DA.GetDataList(IN_PARAM_RULE_LOW, adjacencyRulesModuleLow);
         DA.GetDataList(IN_PARAM_RULE_HIGH, adjacencyRulesModuleHigh);
 
-        Int32 minCount = Math.Min(Math.Min(adjacencyRulesAxis.Count, adjacencyRulesModuleLow.Count),
-                                  adjacencyRulesModuleHigh.Count);
+        int minCount = Math.Min(Math.Min(adjacencyRulesAxis.Count, adjacencyRulesModuleLow.Count),
+                                adjacencyRulesModuleHigh.Count);
 
         if (minCount == 0)
         {
@@ -122,9 +121,9 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             return;
         }
 
-        UInt32 nextModule = 0;
-        Dictionary<string, UInt32> nameToModule = new Dictionary<string, UInt32>();
-        Dictionary<UInt32, string> moduleToName = new Dictionary<UInt32, string>();
+        byte nextModule = 0;
+        Dictionary<string, byte> nameToModule = new Dictionary<string, byte>();
+        Dictionary<byte, string> moduleToName = new Dictionary<byte, string>();
         AdjacencyRule[] adjacencyRules = new AdjacencyRule[minCount];
 
         for (int i = 0; i < minCount; ++i)
@@ -153,7 +152,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                     return;
             }
 
-            UInt32 low = 0;
+            byte low = 0;
             if (nameToModule.ContainsKey(lowStr))
             {
                 nameToModule.TryGetValue(lowStr, out low);
@@ -166,7 +165,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                 nextModule++;
             }
 
-            UInt32 high = 0;
+            byte high = 0;
             if (nameToModule.ContainsKey(highStr))
             {
                 nameToModule.TryGetValue(highStr, out high);
@@ -186,13 +185,19 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             adjacencyRules[i] = rule;
         }
 
+        if (nameToModule.Count > 256) {
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                              "Too many modules. Maximum allowed is 256");
+            return;
+        }
+
         //
         // -- World dimensions --
         //
 
-        Int32 worldXInt = 0;
-        Int32 worldYInt = 0;
-        Int32 worldZInt = 0;
+        int worldXInt = 0;
+        int worldYInt = 0;
+        int worldZInt = 0;
         DA.GetData(IN_PARAM_WORLD_X, ref worldXInt);
         DA.GetData(IN_PARAM_WORLD_Y, ref worldYInt);
         DA.GetData(IN_PARAM_WORLD_Z, ref worldZInt);
@@ -216,10 +221,10 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             return;
         }
 
-        UInt16 worldX = (UInt16)worldXInt;
-        UInt16 worldY = (UInt16)worldYInt;
-        UInt16 worldZ = (UInt16)worldZInt;
-        UInt32 worldDimensions = (UInt32)worldX * (UInt32)worldY * (UInt32)worldZ;
+        ushort worldX = (ushort)worldXInt;
+        ushort worldY = (ushort)worldYInt;
+        ushort worldZ = (ushort)worldZInt;
+        uint worldDimensions = (uint)worldX * (uint)worldY * (uint)worldZ;
 
         //
         // -- World state --
@@ -272,29 +277,22 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                     slotState.slot_state[1] = 0;
                     slotState.slot_state[2] = 0;
                     slotState.slot_state[3] = 0;
-                    slotState.slot_state[4] = 0;
-                    slotState.slot_state[5] = 0;
-                    slotState.slot_state[6] = 0;
-                    slotState.slot_state[7] = 0;
                 }
 
                 IList branchValues = worldStateTree.get_Branch(branchIndex);
                 foreach (GH_String name in branchValues)
                 {
-                    if (nameToModule.TryGetValue(name.ToString(), out UInt32 module))
+                    if (nameToModule.TryGetValue(name.ToString(), out byte module))
                     {
-                        UInt32 blkIdx = module / 64;
-                        UInt32 bitIdx = module % 64;
-                        UInt64 mask = (UInt64)1 << (Int32)bitIdx;
+                        byte blkIdx = (byte)(module / 64u);
+                        byte bitIdx = (byte)(module % 64u);
+                        ulong mask = 1ul << bitIdx;
 
-                        Debug.Assert(blkIdx < 8);
+                        Debug.Assert(blkIdx < 4);
                         unsafe
                         {
                             slotState.slot_state[blkIdx] |= mask;
                         }
-
-                        // AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                        //                   "Branch " + branchIndex + " (" + name + ") [" + blkIdx + "," + bitIdx + "] mask=" + mask + " slot=" + slotState);
                     } else {
                         AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                           "World state data contains module not found in the ruleset: " + name);
@@ -313,7 +311,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         // We let GH provide an int, use it to seed a C# Random, get 16 bytes of data from that
         // and copy those to the FFI ready RngSeed.rng_seed fixed buffer.
 
-        Int32 ghRandomSeed = 0;
+        int ghRandomSeed = 0;
         DA.GetData(IN_PARAM_RANDOM_SEED, ref ghRandomSeed);
 
         Random ghRandom = new Random(ghRandomSeed);
@@ -335,7 +333,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
 
         Int32 maxAttemptsInt = 0;
         DA.GetData(IN_PARAM_MAX_ATTEMPTS, ref maxAttemptsInt);
-        UInt32 maxAttempts = (UInt32)maxAttemptsInt;
+        uint maxAttempts = (uint)maxAttemptsInt;
 
         //
         // -- Run the thing and **pray** --
@@ -401,7 +399,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             }
         }
 
-        UInt32 attempts = Native.wfc_observe(wfc, maxAttempts);
+        uint attempts = Native.wfc_observe(wfc, maxAttempts);
         if (attempts == 0)
         {
             AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
@@ -433,17 +431,17 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             foreach (SlotState slotState in worldState)
             {
                 // Assume the result is deterministic and only take the first set bit
-                Int64 module = Int64.MinValue;
-                for (Int32 blkIdx = 0; blkIdx < 8 && module == Int64.MinValue; ++blkIdx)
+                short module = short.MinValue;
+                for (int blkIdx = 0; blkIdx < 4 && module == short.MinValue; ++blkIdx)
                 {
-                    for (Int32 bitIdx = 0; bitIdx < 64 && module == Int64.MinValue; ++bitIdx)
+                    for (int bitIdx = 0; bitIdx < 64 && module == short.MinValue; ++bitIdx)
                     {
-                        UInt64 mask = (UInt64)1 << bitIdx;
+                        ulong mask = 1ul << bitIdx;
                         unsafe
                         {
                             if ((slotState.slot_state[blkIdx] & mask) != 0)
                             {
-                                module = (UInt32)(64 * blkIdx + bitIdx);
+                                module = (short)(64 * blkIdx + bitIdx);
                             }
                         }
                     }
@@ -452,7 +450,8 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                 string name = "<unknown>";
                 if (module >= 0)
                 {
-                    moduleToName.TryGetValue((UInt32)module, out name);
+                    Debug.Assert(module <= byte.MaxValue);
+                    moduleToName.TryGetValue((byte)module, out name);
                 }
 
                 GH_Path branchPath = new GH_Path(branchIndex);
@@ -462,8 +461,8 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             }
         }
 
-        stats.ruleCount = (UInt32)minCount;
-        stats.moduleCount = (UInt32)moduleToName.Count;
+        stats.ruleCount = (uint)minCount;
+        stats.moduleCount = (uint)moduleToName.Count;
         stats.solveAttempts = attempts;
 
         DA.SetData(OUT_PARAM_DEBUG_OUTPUT, stats.ToString());
@@ -471,7 +470,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
     }
 }
 
-internal enum AdjacencyRuleKind : UInt32
+internal enum AdjacencyRuleKind : uint
 {
     X = 0,
     Y = 1,
@@ -482,8 +481,8 @@ internal enum AdjacencyRuleKind : UInt32
 internal struct AdjacencyRule
 {
     public AdjacencyRuleKind kind;
-    public UInt32 module_low;
-    public UInt32 module_high;
+    public byte module_low;
+    public byte module_high;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -492,14 +491,14 @@ internal unsafe struct RngSeed
     public fixed byte rng_seed[16];
 }
 
-internal enum WfcInitResult : UInt32
+internal enum WfcInitResult : uint
 {
     Ok = 0,
     TooManyModules = 1,
     WorldDimensionsZero = 2,
 }
 
-internal enum WfcWorldStateSetResult : UInt32
+internal enum WfcWorldStateSetResult : uint
 {
     Ok = 0,
     OkNotCanonical = 1,
@@ -509,11 +508,11 @@ internal enum WfcWorldStateSetResult : UInt32
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct SlotState
 {
-    public fixed UInt64 slot_state[8];
+    public fixed ulong slot_state[4];
 
     public override string ToString()
     {
-        StringBuilder b = new StringBuilder("Slot state {", 128);
+        StringBuilder b = new StringBuilder("Slot state { ", 64);
 
         b.Append("[");
         b.Append(slot_state[0]);
@@ -523,14 +522,6 @@ internal unsafe struct SlotState
         b.Append(slot_state[2]);
         b.Append("][");
         b.Append(slot_state[3]);
-        b.Append("][");
-        b.Append(slot_state[4]);
-        b.Append("][");
-        b.Append(slot_state[5]);
-        b.Append("][");
-        b.Append(slot_state[6]);
-        b.Append("][");
-        b.Append(slot_state[7]);
         b.Append("] }");
 
         return b.ToString();
@@ -539,9 +530,9 @@ internal unsafe struct SlotState
 
 internal struct Stats
 {
-    public UInt32 ruleCount;
-    public UInt32 moduleCount;
-    public UInt32 solveAttempts;
+    public uint ruleCount;
+    public uint moduleCount;
+    public uint solveAttempts;
     public bool worldNotCanonical;
 
     public override string ToString()
@@ -573,16 +564,16 @@ internal class Native
     internal static unsafe extern WfcInitResult wfc_init(IntPtr* wfc_ptr,
                                                          AdjacencyRule* adjacency_rules_ptr,
                                                          UIntPtr adjacency_rules_len,
-                                                         UInt16 world_x,
-                                                         UInt16 world_y,
-                                                         UInt16 world_z,
+                                                         ushort world_x,
+                                                         ushort world_y,
+                                                         ushort world_z,
                                                          RngSeed rng_seed);
 
     [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
     internal static extern void wfc_free(IntPtr wfc);
 
     [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern UInt32 wfc_observe(IntPtr wfc, UInt32 max_attempts);
+    internal static extern uint wfc_observe(IntPtr wfc, uint max_attempts);
 
     [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
     internal static unsafe extern WfcWorldStateSetResult wfc_world_state_set(IntPtr wfc,
