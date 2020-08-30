@@ -100,6 +100,10 @@ pub enum WfcInitResult {
 /// To change the world state to a different configuration, use
 /// `wfc_world_state_set`.
 ///
+/// The RNG used by the WFC algorithm requires 128 bits of random seed. It is
+/// provided as two 64 bit unsigned integers: `rng_seed_low` and
+/// `rng_seed_high`. They are expected to be little-endian on all platforms.
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
