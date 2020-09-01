@@ -568,9 +568,9 @@ internal class Native
     internal static unsafe extern WfcInitResult wfc_init(IntPtr* wfc_ptr,
                                                          AdjacencyRule* adjacency_rules_ptr,
                                                          UIntPtr adjacency_rules_len,
-                                                         UInt16 world_x,
-                                                         UInt16 world_y,
-                                                         UInt16 world_z,
+                                                         ushort world_x,
+                                                         ushort world_y,
+                                                         ushort world_z,
                                                          ulong rngSeedLow,
                                                          ulong rngSeedHigh);
 
