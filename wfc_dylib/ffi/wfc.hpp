@@ -50,6 +50,10 @@ void wfc_free(Wfc wfc);
 /// To change the world state to a different configuration, use
 /// `wfc_world_state_set`.
 ///
+/// The RNG used by the WFC algorithm requires 128 bits of random seed. It is
+/// provided as two 64 bit unsigned integers: `rng_seed_low` and
+/// `rng_seed_high`. They are expected to be little-endian on all platforms.
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
@@ -64,7 +68,8 @@ WfcInitResult wfc_init(Wfc *wfc_ptr,
                        uint16_t world_x,
                        uint16_t world_y,
                        uint16_t world_z,
-                       uint8_t rng_seed[16]);
+                       uint64_t rng_seed_low,
+                       uint64_t rng_seed_high);
 
 /// Runs observations on the world until a deterministic or contradictory result
 /// is found.
