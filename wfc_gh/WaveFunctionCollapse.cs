@@ -67,7 +67,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
 
         pManager.AddTextParameter("World state",
                                   "W",
-                                  "The initial state of the world",
+                                  "The initial state of the world. Pass in a tree with exactly one path as a shorthand to allow every module in every slot",
                                   GH_ParamAccess.tree);
 
         pManager.AddIntegerParameter("Random seed",
@@ -235,7 +235,13 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         SlotState[] worldState = new SlotState[worldDimensions];
 
         GH_Structure<GH_String> worldStateTree;
-        bool worldStateProvided = DA.GetDataTree<GH_String>(IN_PARAM_WORLD_STATE, out worldStateTree);
+        DA.GetDataTree<GH_String>(IN_PARAM_WORLD_STATE, out worldStateTree);
+
+        // Everything in GH is a tree and has at least one branch. GH doesn't seem to support
+        // default values for tree parameters - it doesn't even call SolveInstance unless there
+        // is a value plugged in - so we let the user use the default parameter by plugging in
+        // any tree with 1 branch or less.
+        bool worldStateProvided = worldStateTree.PathCount > 1;
         if (worldStateProvided)
         {
             if (worldStateTree.PathCount != worldDimensions)
