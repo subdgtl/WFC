@@ -103,6 +103,9 @@ pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
     slots: Vec<TinyBitVec>,
+    /// Working memory of picking the nondeterministic slot with smallest
+    /// entropy. Pre-allocated to maximum capacity.
+    slots_with_min_entropy: Vec<usize>,
     module_count: usize,
 }
 
@@ -153,6 +156,7 @@ impl World {
             dims,
             adjacencies,
             slots,
+            slots_with_min_entropy: Vec::with_capacity(slot_count),
             module_count: cast_usize(module_count),
         }
     }
@@ -259,7 +263,9 @@ impl World {
     }
 
     pub fn observe<R: rand_core::RngCore>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
-        let mut min_entropy_slot_index_and_value: Option<(usize, usize)> = None;
+        let mut min_entropy = usize::MAX;
+        self.slots_with_min_entropy.clear();
+
         for (i, slot) in self.slots.iter().enumerate() {
             let entropy = slot.len();
             // We can collapse anything with entropy >= 2. If entropy == 1, the
@@ -270,39 +276,41 @@ impl World {
             }
 
             if entropy >= 2 {
-                match min_entropy_slot_index_and_value {
-                    Some((_, min_entropy)) => {
-                        if entropy < min_entropy {
-                            min_entropy_slot_index_and_value = Some((i, entropy));
-                        }
+                match entropy.cmp(&min_entropy) {
+                    Ordering::Less => {
+                        min_entropy = entropy;
+                        self.slots_with_min_entropy.clear();
+                        self.slots_with_min_entropy.push(i);
                     }
-                    None => {
-                        min_entropy_slot_index_and_value = Some((i, entropy));
+                    Ordering::Equal => {
+                        self.slots_with_min_entropy.push(i);
                     }
+                    Ordering::Greater => (),
                 }
             }
         }
 
-        if let Some((min_entropy_slot_index, _)) = min_entropy_slot_index_and_value {
+        if self.slots_with_min_entropy.is_empty() {
+            (false, WorldStatus::Deterministic)
+        } else {
+            let iter = self.slots_with_min_entropy.iter().copied();
+            let min_entropy_slot_index = choose_random(iter, rng);
             let min_entropy_slot = &mut self.slots[min_entropy_slot_index];
 
             // Pick a random module to materialize and remove other
             // possibilities from the slot.
-            let chosen_module = choose_random(min_entropy_slot, rng);
+            let chosen_module = choose_random(min_entropy_slot.iter(), rng);
 
             min_entropy_slot.clear();
             min_entropy_slot.add(chosen_module);
 
             let (changed, contradiction) = self.propagate_constraints(min_entropy_slot_index);
-
             if contradiction {
                 (changed, WorldStatus::Contradiction)
             } else {
                 let status = self.world_status();
                 (changed, status)
             }
-        } else {
-            (false, WorldStatus::Deterministic)
         }
     }
 
@@ -530,9 +538,11 @@ impl World {
     }
 }
 
-fn choose_random<R: rand_core::RngCore>(bitvec: &TinyBitVec, rng: &mut R) -> u8 {
-    let mut iter = bitvec.iter();
-
+fn choose_random<I, T, R>(mut iter: I, rng: &mut R) -> T
+where
+    I: Iterator<Item = T>,
+    R: rand_core::RngCore,
+{
     let (size_hint_low, size_hint_high) = iter.size_hint();
     assert!(size_hint_low > 0);
     assert_eq!(Some(size_hint_low), size_hint_high);
