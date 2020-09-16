@@ -121,6 +121,24 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             return;
         }
 
+        // We need to check ahead of time, if there are at most 256 modules
+        // altogether in the input, otherwise the `nextModule` variable will
+        // overflow and cause a dictionary error.
+        {
+            HashSet<string> allModules = new HashSet<string>();
+
+            for (int i = 0; i < minCount; ++i) {
+                allModules.Add(adjacencyRulesModuleLow[i]);
+                allModules.Add(adjacencyRulesModuleHigh[i]);
+            }
+
+            if (allModules.Count > 256) {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                  "Too many modules. Maximum allowed is 256");
+                return;
+            }
+        }
+
         byte nextModule = 0;
         Dictionary<string, byte> nameToModule = new Dictionary<string, byte>();
         Dictionary<byte, string> moduleToName = new Dictionary<byte, string>();
@@ -183,12 +201,6 @@ public class GH_WaveFunctionCollapse3D : GH_Component
             rule.module_low = low;
             rule.module_high = high;
             adjacencyRules[i] = rule;
-        }
-
-        if (nameToModule.Count > 256) {
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                              "Too many modules. Maximum allowed is 256");
-            return;
         }
 
         //
