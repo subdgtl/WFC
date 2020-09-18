@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -7,7 +6,7 @@ using System.Text;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
-using Grasshopper.Kernel.Types;
+using Rhino.Geometry;
 
 public class GH_WaveFunctionCollapse3D : GH_Component
 {
@@ -15,15 +14,15 @@ public class GH_WaveFunctionCollapse3D : GH_Component
     private const int IN_PARAM_RULE_AXIS = 0;
     private const int IN_PARAM_RULE_LOW = 1;
     private const int IN_PARAM_RULE_HIGH = 2;
-    private const int IN_PARAM_WORLD_X = 3;
-    private const int IN_PARAM_WORLD_Y = 4;
-    private const int IN_PARAM_WORLD_Z = 5;
-    private const int IN_PARAM_WORLD_STATE = 6;
-    private const int IN_PARAM_RANDOM_SEED = 7;
-    private const int IN_PARAM_MAX_ATTEMPTS = 8;
+    private const int IN_PARAM_WORLD_SIZE = 3;
+    private const int IN_PARAM_WORLD_SLOT_POSITION = 4;
+    private const int IN_PARAM_WORLD_SLOT_MODULE = 5;
+    private const int IN_PARAM_RANDOM_SEED = 6;
+    private const int IN_PARAM_MAX_ATTEMPTS = 7;
 
     private const int OUT_PARAM_DEBUG_OUTPUT = 0;
-    private const int OUT_PARAM_WORLD_STATE = 1;
+    private const int OUT_PARAM_WORLD_SLOT_POSITION = 1;
+    private const int OUT_PARAM_WORLD_SLOT_MODULE = 2;
     public GH_WaveFunctionCollapse3D() : base("Wave Function Collapse 3D",
                                               "WFC3",
                                               "Solver for the Wave Function Collapse algorithm in cubic voxel space",
@@ -38,37 +37,32 @@ public class GH_WaveFunctionCollapse3D : GH_Component
     {
         pManager.AddTextParameter("Rule axis",
                                   "RA",
-                                  "Axis along which to apply the rule",
+                                  "A list of string axes (\"X\", \"Y\" or \"Z\") definitions along which to apply the rule. Zipped with RL and RH.",
                                   GH_ParamAccess.list);
         pManager.AddTextParameter("Rule low",
                                   "RL",
-                                  "Identifier of the module on the low dimension along the axis",
+                                  "A list of string identifiers of the module on the low dimension along the axis. Zipped with RA and RH.",
                                   GH_ParamAccess.list);
         pManager.AddTextParameter("Rule high",
                                   "RH",
-                                  "Identifier of the module on the high dimension along the axis",
+                                  "A list of string identifiers of the module on the high dimension along the axis. Zipped with RA and RL",
                                   GH_ParamAccess.list);
 
-        pManager.AddIntegerParameter("World X",
-                                     "X",
-                                     "X dimension of the world",
-                                     GH_ParamAccess.item,
-                                     5);
-        pManager.AddIntegerParameter("World Y",
-                                     "Y",
-                                     "Y dimension of the world",
-                                     GH_ParamAccess.item,
-                                     5);
-        pManager.AddIntegerParameter("World Z",
-                                     "Z",
-                                     "Z dimension of the world",
-                                     GH_ParamAccess.item,
-                                     5);
+        pManager.AddVectorParameter("World size",
+                                    "WS",
+                                    "A vector defining the X, Y and Z dimensions of the world. Real numbers will be rounded to the nearest integer and must be positive.",
+                                    GH_ParamAccess.item,
+                                    new Vector3d(5.0, 5.0, 5.0));
 
-        pManager.AddTextParameter("World state",
-                                  "W",
-                                  "The initial state of the world. Pass in a tree with exactly one path as a shorthand to allow every module in every slot",
-                                  GH_ParamAccess.tree);
+        pManager.AddVectorParameter("Slot positions",
+                                    "SP",
+                                    "A list of vectors defining positions of slots that will be contain values from SM. Zipped with SM. A position can occur multiple times in this list, each adding the correspoding SM to the slot.",
+                                    GH_ParamAccess.list);
+
+        pManager.AddTextParameter("Slot modules",
+                                  "SM",
+                                  "A list of string identifiers defining modules to add to slots at position from SP. Zipped with SP. A module can occur multiple times in this list, each adding the module at the corresponging SP position.",
+                                  GH_ParamAccess.list);
 
         pManager.AddIntegerParameter("Random seed",
                                      "S",
@@ -85,10 +79,14 @@ public class GH_WaveFunctionCollapse3D : GH_Component
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
     {
         pManager.AddTextParameter("out", "out", "Debug output and metrics", GH_ParamAccess.item);
-        pManager.AddTextParameter("World state",
-                                  "W",
-                                  "State of the world once the wave function has collapsed",
-                                  GH_ParamAccess.tree);
+        pManager.AddVectorParameter("Slot positions",
+                                    "SP",
+                                    "Positions of the state of the world once the wave function has collapsed. Has exactly the same format as the SP input parameter.",
+                                    GH_ParamAccess.list);
+        pManager.AddTextParameter("Slot modules",
+                                  "SM",
+                                  "Modules of the state of the world once the wave function has collapsed. Has exactly the same format as the SM input parameter.",
+                                  GH_ParamAccess.list);
     }
 
     protected override void SolveInstance(IGH_DataAccess DA)
@@ -111,10 +109,11 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         DA.GetDataList(IN_PARAM_RULE_LOW, adjacencyRulesModuleLow);
         DA.GetDataList(IN_PARAM_RULE_HIGH, adjacencyRulesModuleHigh);
 
-        int minCount = Math.Min(Math.Min(adjacencyRulesAxis.Count, adjacencyRulesModuleLow.Count),
-                                adjacencyRulesModuleHigh.Count);
+        int adjacencyRulesMinCount = Math.Min(Math.Min(adjacencyRulesAxis.Count,
+                                                       adjacencyRulesModuleLow.Count),
+                                              adjacencyRulesModuleHigh.Count);
 
-        if (minCount == 0)
+        if (adjacencyRulesMinCount == 0)
         {
             AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                               "Must supply at least one adjacency rule");
@@ -127,7 +126,7 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         {
             HashSet<string> allModules = new HashSet<string>();
 
-            for (int i = 0; i < minCount; ++i) {
+            for (int i = 0; i < adjacencyRulesMinCount; ++i) {
                 allModules.Add(adjacencyRulesModuleLow[i]);
                 allModules.Add(adjacencyRulesModuleHigh[i]);
             }
@@ -142,9 +141,9 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         byte nextModule = 0;
         Dictionary<string, byte> nameToModule = new Dictionary<string, byte>();
         Dictionary<byte, string> moduleToName = new Dictionary<byte, string>();
-        AdjacencyRule[] adjacencyRules = new AdjacencyRule[minCount];
+        AdjacencyRule[] adjacencyRules = new AdjacencyRule[adjacencyRulesMinCount];
 
-        for (int i = 0; i < minCount; ++i)
+        for (int i = 0; i < adjacencyRulesMinCount; ++i)
         {
             string axisStr = adjacencyRulesAxis[i];
             string lowStr = adjacencyRulesModuleLow[i];
@@ -207,12 +206,12 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         // -- World dimensions --
         //
 
-        int worldXInt = 0;
-        int worldYInt = 0;
-        int worldZInt = 0;
-        DA.GetData(IN_PARAM_WORLD_X, ref worldXInt);
-        DA.GetData(IN_PARAM_WORLD_Y, ref worldYInt);
-        DA.GetData(IN_PARAM_WORLD_Z, ref worldZInt);
+        Vector3d worldSize = Vector3d.Zero;
+        DA.GetData(IN_PARAM_WORLD_SIZE, ref worldSize);
+
+        int worldXInt = (int)Math.Round(worldSize.X);
+        int worldYInt = (int)Math.Round(worldSize.Y);
+        int worldZInt = (int)Math.Round(worldSize.Z);
 
         if (worldXInt <= 0)
         {
@@ -236,89 +235,90 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         ushort worldX = (ushort)worldXInt;
         ushort worldY = (ushort)worldYInt;
         ushort worldZ = (ushort)worldZInt;
-        uint worldDimensions = (uint)worldX * (uint)worldY * (uint)worldZ;
+        uint worldDimensions = (uint)worldX * worldY * worldZ;
+        uint worldSlotsPerLayer = (uint)worldX * worldY;
+        uint worldSlotsPerRow = worldX;
 
         //
-        // -- World state --
+        // -- World slot positions and modules --
         //
 
         // This array is re-used for both input and output (if input world state was provided).
-        // This is ok, because wfc_world_state_get does clear it to zero.
+        // This is ok, because wfc_world_state_get does clear it to zero before writing to it.
         SlotState[] worldState = new SlotState[worldDimensions];
 
-        GH_Structure<GH_String> worldStateTree;
-        DA.GetDataTree<GH_String>(IN_PARAM_WORLD_STATE, out worldStateTree);
-
-        // Everything in GH is a tree and has at least one branch. GH doesn't seem to support
-        // default values for tree parameters - it doesn't even call SolveInstance unless there
-        // is a value plugged in - so we let the user use the default parameter by plugging in
-        // any tree with 1 branch or less.
-        bool worldStateProvided = worldStateTree.PathCount > 1;
-        if (worldStateProvided)
+        // ... WE do need to clear it to zero, however. C# does not initialize slot_state for us!
+        for (int i = 0; i < worldState.Length; ++i)
         {
-            if (worldStateTree.PathCount != worldDimensions)
+            unsafe
+            {
+                worldState[i].slot_state[0] = 0;
+                worldState[i].slot_state[1] = 0;
+                worldState[i].slot_state[2] = 0;
+                worldState[i].slot_state[3] = 0;
+            }
+        }
+
+        // Note: These lists will be cleared and re-used for output.
+        List<Vector3d> worldSlotPositions = new List<Vector3d>();
+        List<string> worldSlotModules = new List<string>();
+
+        DA.GetDataList(IN_PARAM_WORLD_SLOT_POSITION, worldSlotPositions);
+        DA.GetDataList(IN_PARAM_WORLD_SLOT_MODULE, worldSlotModules);
+
+        int worldSlotMinCount = Math.Min(worldSlotPositions.Count, worldSlotModules.Count);
+        for (int i = 0; i < worldSlotMinCount; ++i)
+        {
+            Vector3d position = worldSlotPositions[i];
+            string moduleStr = worldSlotModules[i];
+
+            int slotXInt = (int)Math.Round(position.X);
+            int slotYInt = (int)Math.Round(position.Y);
+            int slotZInt = (int)Math.Round(position.Z);
+
+            if (slotXInt < 0)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                  "World state must have the same amount of branches as 'WorldX * WorldY * WorldZ'");
+                                  "Slot X must be a nonnegative integer");
+                return;
+            }
+            if (slotYInt < 0)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                  "Slot Y must be a nonnegative integer");
+                return;
+            }
+            if (slotZInt < 0)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                  "World Z must be a nonnegative integer");
                 return;
             }
 
-            foreach (GH_Path path in worldStateTree.Paths)
+            uint slotX = (uint)slotXInt;
+            uint slotY = (uint)slotYInt;
+            uint slotZ = (uint)slotZInt;
+
+            if (nameToModule.TryGetValue(moduleStr.ToString(), out byte module))
             {
-                if (!path.Valid)
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                      "World state data tree must have branches with valid paths");
-                    return;
-                }
+                uint slotIndex = slotX + slotY * worldSlotsPerRow + slotZ * worldSlotsPerLayer;
+                Debug.Assert(slotIndex < worldState.Length);
 
-                if (path.Length != 1)
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                      "World state data tree must have branches with paths of length one");
-                    return;
-                }
+                byte blkIndex = (byte)(module / 64u);
+                byte bitIndex = (byte)(module % 64u);
+                ulong mask = 1ul << bitIndex;
 
-                Int32 branchIndex = path.Indices[0];
-                if (branchIndex < 0 || branchIndex >= worldDimensions)
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                      "World state data tree must have branches with paths of addressing between 0 and 'WorldX * WorldY * WorldZ'");
-                    return;
-                }
-
-                SlotState slotState;
-                // C# does not initialize slot_state for us...
+                Debug.Assert(blkIndex < 4);
                 unsafe
                 {
-                    slotState.slot_state[0] = 0;
-                    slotState.slot_state[1] = 0;
-                    slotState.slot_state[2] = 0;
-                    slotState.slot_state[3] = 0;
+                    worldState[slotIndex].slot_state[blkIndex] |= mask;
                 }
-
-                IList branchValues = worldStateTree.get_Branch(branchIndex);
-                foreach (GH_String name in branchValues)
-                {
-                    if (nameToModule.TryGetValue(name.ToString(), out byte module))
-                    {
-                        byte blkIdx = (byte)(module / 64u);
-                        byte bitIdx = (byte)(module % 64u);
-                        ulong mask = 1ul << bitIdx;
-
-                        Debug.Assert(blkIdx < 4);
-                        unsafe
-                        {
-                            slotState.slot_state[blkIdx] |= mask;
-                        }
-                    } else {
-                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                          "World state data contains module not found in the ruleset: " + name);
-                        return;
-                    }
-                }
-
-                worldState[branchIndex] = slotState;
+            }
+            else
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                  "Slot module list (SM) contains module not found in the ruleset: " + moduleStr);
+                return;
             }
         }
 
@@ -394,29 +394,25 @@ public class GH_WaveFunctionCollapse3D : GH_Component
                 }
             }
 
-            if (worldStateProvided)
+            fixed (SlotState* worldStatePtr = &worldState[0])
             {
-                fixed (SlotState* worldStatePtr = &worldState[0])
+                WfcWorldStateSetResult result = Native.wfc_world_state_set(wfc,
+                                                                           worldStatePtr,
+                                                                           (UIntPtr)worldState.Length);
+             switch (result)
                 {
-                    WfcWorldStateSetResult result = Native.wfc_world_state_set(wfc,
-                                                                               worldStatePtr,
-                                                                               (UIntPtr)worldState.Length);
-
-                    switch (result)
-                    {
-                        case WfcWorldStateSetResult.Ok:
-                            // All good
-                            stats.worldNotCanonical = false;
-                            break;
-                        case WfcWorldStateSetResult.OkNotCanonical:
-                            // All good, but we had to fix some things
-                            stats.worldNotCanonical = true;
-                            break;
-                        case WfcWorldStateSetResult.WorldContradictory:
-                            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                              "WFC solver failed: World state is contradictory");
-                            return;
-                    }
+                    case WfcWorldStateSetResult.Ok:
+                        // All good
+                        stats.worldNotCanonical = false;
+                        break;
+                    case WfcWorldStateSetResult.OkNotCanonical:
+                        // All good, but we had to fix some things
+                        stats.worldNotCanonical = true;
+                        break;
+                    case WfcWorldStateSetResult.WorldContradictory:
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                          "WFC solver failed: World state is contradictory");
+                        return;
                 }
             }
         }
@@ -446,49 +442,49 @@ public class GH_WaveFunctionCollapse3D : GH_Component
         // early-out on nondeterministic results, we can assume exactly one bit
         // being set here and can therefore produce a flat list on output.
 
-        DataTree<string> worldStateOutput = new DataTree<string>();
-
+        worldSlotPositions.Clear();
+        worldSlotModules.Clear();
+        for (int i = 0; i < worldState.Length; ++i)
         {
-            Int32 branchIndex = 0;
-            foreach (SlotState slotState in worldState)
+            // Assume the result is deterministic and only take the first set bit
+            short module = short.MinValue;
+            for (int blkIndex = 0; blkIndex < 4 && module == short.MinValue; ++blkIndex)
             {
-                // Assume the result is deterministic and only take the first set bit
-                short module = short.MinValue;
-                for (int blkIdx = 0; blkIdx < 4 && module == short.MinValue; ++blkIdx)
+                for (int bitIndex = 0; bitIndex < 64 && module == short.MinValue; ++bitIndex)
                 {
-                    for (int bitIdx = 0; bitIdx < 64 && module == short.MinValue; ++bitIdx)
+                    ulong mask = 1ul << bitIndex;
+                    unsafe
                     {
-                        ulong mask = 1ul << bitIdx;
-                        unsafe
+                        if ((worldState[i].slot_state[blkIndex] & mask) != 0)
                         {
-                            if ((slotState.slot_state[blkIdx] & mask) != 0)
-                            {
-                                module = (short)(64 * blkIdx + bitIdx);
-                            }
+                            module = (short)(64 * blkIndex + bitIndex);
                         }
                     }
                 }
-
-                string name = "<unknown>";
-                if (module >= 0)
-                {
-                    Debug.Assert(module <= byte.MaxValue);
-                    moduleToName.TryGetValue((byte)module, out name);
-                }
-
-                GH_Path branchPath = new GH_Path(branchIndex);
-                worldStateOutput.Add(name, branchPath);
-
-                branchIndex++;
             }
+
+            string moduleStr = "<unknown>";
+            if (module >= 0)
+            {
+                Debug.Assert(module <= byte.MaxValue);
+                moduleToName.TryGetValue((byte)module, out moduleStr);
+            }
+
+            long slotX = i % worldSlotsPerLayer % worldSlotsPerRow;
+            long slotY = i % worldSlotsPerLayer / worldSlotsPerRow;
+            long slotZ = i / worldSlotsPerLayer;
+
+            worldSlotPositions.Add(new Vector3d(slotX, slotY, slotZ));
+            worldSlotModules.Add(moduleStr);
         }
 
-        stats.ruleCount = (uint)minCount;
+        stats.ruleCount = (uint)adjacencyRulesMinCount;
         stats.moduleCount = (uint)moduleToName.Count;
         stats.solveAttempts = attempts;
 
         DA.SetData(OUT_PARAM_DEBUG_OUTPUT, stats.ToString());
-        DA.SetDataTree(OUT_PARAM_WORLD_STATE, worldStateOutput);
+        DA.SetDataList(OUT_PARAM_WORLD_SLOT_POSITION, worldSlotPositions);
+        DA.SetDataList(OUT_PARAM_WORLD_SLOT_MODULE, worldSlotModules);
     }
 }
 
