@@ -50,13 +50,13 @@ public class GH_WaveFunctionCollapse3D : GH_Component
 
         pManager.AddVectorParameter("World size",
                                     "WS",
-                                    "A vector defining the X, Y and Z dimensions of the world. Real numbers will be rounded to the nearest integer and must be positive.",
+                                    "A vector defining the X, Y and Z dimensions of the world. Real numbers in the vector will be rounded to the nearest integer and must be positive (they define size).",
                                     GH_ParamAccess.item,
                                     new Vector3d(5.0, 5.0, 5.0));
 
         pManager.AddVectorParameter("Slot positions",
                                     "SP",
-                                    "A list of vectors defining positions of slots that will be contain values from SM. Zipped with SM. A position can occur multiple times in this list, each adding the correspoding SM to the slot.",
+                                    "A list of vectors defining positions of slots that will be contain values from SM. Zipped with SM. A position can occur multiple times in this list, each adding the correspoding SM to the slot. Real numbers in the vectors will be rounded to the nearest integer and must be nonnegative (they define indices)",
                                     GH_ParamAccess.list);
 
         pManager.AddTextParameter("Slot modules",
