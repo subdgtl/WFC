@@ -78,6 +78,23 @@ impl Into<Adjacency> for AdjacencyRule {
 // wfc_sim_state_get). wfc_observe would be the way to sift state from
 // WfcCanonicalstate to WfcSimState.
 
+// XXX: The above fixme can cause incorrect RNG usage, where the RNG is not
+// correctly re-seeded (actually the current API can cause it too). Does the
+// following split make sense?
+//
+// - WfcWorldState and WfcWorldStateHandle (the user would create two of these,
+//   source and destination, with methods being wfc_world_state_init,
+//   wfc_world_state_init_from, and wfc_world_state_free). The init_from would
+//   be a cheaper version of init.
+//
+// - WfcRngState and WfcRngStateHandle (with wfc_rng_state_init and
+//   wfc_rng_state_free)
+//
+// wfc_world_state_slots_get and wfc_world_state_slots_set would work on both
+// source and destination worlds.
+//
+// wfc_observe would take the source and destination worlds, and the RNG state.
+
 /// An opaque handle to the WFC canonical state. Actually a pointer, but shhh!
 #[repr(transparent)]
 pub struct WfcCanonicalStateHandle(*mut WfcCanonicalState);
