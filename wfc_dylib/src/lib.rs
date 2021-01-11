@@ -59,46 +59,61 @@ impl Into<Adjacency> for AdjacencyRule {
     }
 }
 
-// FIXME: Make the `Wfc` a proper opaque handle and store the states in an
+// FIXME: Make the handles proper opaque handles and store state in an
 // array. https://floooh.github.io/2018/06/17/handles-vs-pointers.html
 
-/// An opaque handle to `WfcState`. Actually a pointer, but shhh!
-#[repr(transparent)]
-pub struct Wfc(*mut WfcState);
+// FIXME: This world_initial <-> world duplication makes the API
+// non-intuitive. On the outside it isn't obvious that you can run wfc_observe
+// multiple times without resetting the state manually.
+//
+// This could be made explicit by splitting the `Wfc` handle into two:
+// e.g. WfcCanonicalState and WfcSimState. WfcCanonicalState would contain the
+// world_initial field (world_canonical), while WfcSimState would contain the
+// world and rng fields. The init and free functions would need to be duplicated
+// between the two, e.g wfc_canonical_state_init and wfc_sim_state_init. To
+// create an instance of WfcSimState, WfcCanonicalState would be required.
+// wfc_world_state_set would only operate on WfcCanonicalstate (and would be
+// called something like wfc_canonical_state_set), and wfc_world_state_get would
+// operate on WfcSimState (and be called something like
+// wfc_sim_state_get). wfc_observe would be the way to sift state from
+// WfcCanonicalstate to WfcSimState.
 
-struct WfcState {
-    // FIXME: This world_initial <-> world duplication makes the API
-    // non-intuitive. On the outside it isn't obvious that you can run
-    // wfc_observe multiple times without resetting the state manually.
-    //
-    // This could be made explicit by splitting the `Wfc` handle into two:
-    // e.g. WfcCanonicalState and WfcSimState. WfcCanonicalState would contain
-    // the world_initial field (world_canonical), while WfcSimState would
-    // contain the world and rng fields. The init and free functions would need
-    // to be duplicated between the two, e.g wfc_canonical_state_init and
-    // wfc_sim_state_init. To create an instance of WfcSimState,
-    // WfcCanonicalState would be required.  wfc_world_state_set would only
-    // operate on WfcCanonicalstate (and would be called something like
-    // wfc_canonical_state_set), and wfc_world_state_get would operate on
-    // WfcSimState (and be called something like wfc_sim_state_get). wfc_observe
-    // would be the way to sift state from WfcCanonicalstate to WfcSimState.
-    world_initial: World,
+/// An opaque handle to the WFC canonical state. Actually a pointer, but shhh!
+#[repr(transparent)]
+pub struct WfcCanonicalStateHandle(*mut WfcCanonicalState);
+
+struct WfcCanonicalState {
+    world: World,
+}
+
+/// An opaque handle to the WFC simulation state. Actually a pointer, but shhh!
+#[repr(transparent)]
+pub struct WfcSimulationStateHandle(*mut WfcSimulationState);
+
+struct WfcSimulationState {
     world: World,
     rng: rand_pcg::Pcg32,
 }
 
 #[repr(u32)]
-pub enum WfcInitResult {
+pub enum WfcCanonicalStateInitResult {
     Ok = 0,
     TooManyModules = 1,
     WorldDimensionsZero = 2,
 }
 
-/// Initializes Wave Function Collapse state with adjacency rules. The world
-/// gets initialized with every module possible in every slot.
+#[repr(u32)]
+pub enum WfcSimulationStateInitResult {
+    Ok = 0,
+}
+
+/// Initializes Wave Function Collapse canonical state with adjacency rules. The
+/// world gets initialized with every module possible in every slot.
 ///
 /// To change the world state to a different configuration, use
-/// `wfc_world_state_set`.
+/// [`wfc_canonical_state_world_slots_set`].
+///
+/// XXX: Move RNG comment to wfc_simulation_state_init
 ///
 /// The RNG used by the WFC algorithm requires 128 bits of random seed. It is
 /// provided as two 64 bit unsigned integers: `rng_seed_low` and
@@ -111,18 +126,16 @@ pub enum WfcInitResult {
 /// - `wfc_ptr` will be written to. It must be non-null and aligned.
 ///
 /// - `adjacency_rules_ptr` and `adjacency_rules_len` are used to construct a
-///    slice. See `slice::from_raw_parts`.
+///    slice. See [`std::slice::from_raw_parts`].
 #[no_mangle]
-pub unsafe extern "C" fn wfc_init(
-    wfc_ptr: *mut Wfc,
+pub unsafe extern "C" fn wfc_canonical_state_init(
+    wfc_canonical_state_handle_ptr: *mut WfcCanonicalStateHandle,
     adjacency_rules_ptr: *const AdjacencyRule,
     adjacency_rules_len: usize,
     world_x: u16,
     world_y: u16,
     world_z: u16,
-    rng_seed_low: u64,
-    rng_seed_high: u64,
-) -> WfcInitResult {
+) -> WfcCanonicalStateInitResult {
     let adjacency_rules = {
         assert!(!adjacency_rules_ptr.is_null());
         assert_ne!(adjacency_rules_len, 0);
@@ -131,53 +144,92 @@ pub unsafe extern "C" fn wfc_init(
     };
 
     if world_x == 0 || world_y == 0 || world_z == 0 {
-        return WfcInitResult::WorldDimensionsZero;
+        return WfcCanonicalStateInitResult::WorldDimensionsZero;
     }
 
     let adjacencies = adjacency_rules
         .iter()
         .map(|adjacency_rule| (*adjacency_rule).into())
         .collect();
-    let world_initial = World::new([world_x, world_y, world_z], adjacencies);
+    let world = World::new([world_x, world_y, world_z], adjacencies);
 
-    if world_initial.module_count() > MAX_MODULE_COUNT {
-        return WfcInitResult::TooManyModules;
+    if world.module_count() > MAX_MODULE_COUNT {
+        return WfcCanonicalStateInitResult::TooManyModules;
     }
 
-    let world = world_initial.clone();
+    let wfc_canonical_state_ptr = Box::into_raw(Box::new(WfcCanonicalState { world }));
+    let wfc_canonical_state_handle = WfcCanonicalStateHandle(wfc_canonical_state_ptr);
+
+    assert!(!wfc_canonical_state_handle_ptr.is_null());
+    *wfc_canonical_state_handle_ptr = wfc_canonical_state_handle;
+
+    WfcCanonicalStateInitResult::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wfc_simulation_state_init(
+    wfc_simulation_state_handle_ptr: *mut WfcSimulationStateHandle,
+    wfc_canonical_state_handle: WfcCanonicalStateHandle,
+    rng_seed_low: u64,
+    rng_seed_high: u64,
+) -> WfcSimulationStateInitResult {
+    let wfc_canonical_state = unsafe {
+        assert!(!wfc_canonical_state_handle.0.is_null());
+        &mut *wfc_canonical_state_handle.0
+    };
+
     let mut rng_seed = [0u8; 16];
     rng_seed[0..8].copy_from_slice(&rng_seed_low.to_le_bytes());
     rng_seed[8..16].copy_from_slice(&rng_seed_high.to_le_bytes());
     let rng = rand_pcg::Pcg32::from_seed(rng_seed);
 
-    let wfc_state_ptr = Box::into_raw(Box::new(WfcState {
-        world_initial,
-        world,
-        rng,
-    }));
-    let wfc = Wfc(wfc_state_ptr);
+    let world = wfc_canonical_state.world.clone();
 
-    assert!(!wfc_ptr.is_null());
-    *wfc_ptr = wfc;
+    let wfc_simulation_state_ptr = Box::into_raw(Box::new(WfcSimulationState { world, rng }));
+    let wfc_simulation_state_handle = WfcSimulationStateHandle(wfc_simulation_state_ptr);
 
-    WfcInitResult::Ok
+    assert!(!wfc_simulation_state_handle_ptr.is_null());
+    *wfc_simulation_state_handle_ptr = wfc_simulation_state_handle;
+
+    WfcSimulationStateInitResult::Ok
 }
 
-/// Frees an instance of Wave Function Collapse state.
+/// Frees an instance of Wave Function Collapse canonical state.
 ///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
 ///
-/// - `wfc` must be a valid handle created via `wfc_init` that returned
-///   `WfcInitResult::Ok` and *not yet* freed via `wfc_free`.
+/// - `wfc_canonical_state_handle` must be a valid handle created via
+/// [`wfc_canonical_state_init`] that returned
+/// [`WfcCanonicalStateInitResult::Ok`] or
+/// [`WfcCanonicalStateInitResult::OkNotcanonical`] and not yet freed via this
+/// function.
 #[no_mangle]
-pub extern "C" fn wfc_free(wfc: Wfc) {
-    if wfc.0.is_null() {
+pub extern "C" fn wfc_canonical_state_free(wfc_canonical_state_handle: WfcCanonicalStateHandle) {
+    if wfc_canonical_state_handle.0.is_null() {
         return;
     }
 
-    unsafe { Box::from_raw(wfc.0) };
+    unsafe { Box::from_raw(wfc_canonical_state_handle.0) };
+}
+
+/// Frees an instance of Wave Function Collapse simulation state.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_simulation_state_handle` must be a valid handle created via
+/// [`wfc_simulation_state_init`] that returned
+/// [`WfcSimulationStateInitResult::Ok`] and not yet freed via this function.
+#[no_mangle]
+pub extern "C" fn wfc_simulation_state_free(wfc_simulation_state_handle: WfcSimulationStateHandle) {
+    if wfc_simulation_state_handle.0.is_null() {
+        return;
+    }
+
+    unsafe { Box::from_raw(wfc_simulation_state_handle.0) };
 }
 
 /// Runs observations on the world until a deterministic or contradictory result
@@ -194,7 +246,7 @@ pub extern "C" fn wfc_free(wfc: Wfc) {
 /// Behavior is undefined if any of the following conditions are violated:
 ///
 /// - `wfc` must be a valid handle created via `wfc_init` that returned
-///   `WfcInitResult::Ok` and *not yet* freed via `wfc_free`.
+///   `WfcInitResult::Ok` and not yet freed via `wfc_free`.
 #[no_mangle]
 pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
     let wfc_state = unsafe {
