@@ -12,3 +12,9 @@ A set of prototype tools for playing with Wave Function Collapse. Currently incl
   functionality of `wfc_core` to use from other sorfware
 
 - `wfc_gh`: A C# Grasshopper component utilizing `wfc_dylib`
+
+## Developing
+
+`wfc_core`, `wfc_cli` and `wfc_dylib` are built with Rust's `cargo
+tool`. `wfc_gh` has to be built with Visual Studio, see `README.md` in `wfc_gh`
+for more.
