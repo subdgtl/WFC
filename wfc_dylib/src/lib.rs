@@ -67,8 +67,8 @@ pub struct WfcRngStateHandle(*mut rand_pcg::Pcg32);
 #[repr(u32)]
 pub enum WfcWorldStateInitResult {
     Ok = 0,
-    TooManyModules = 1,
-    WorldDimensionsZero = 2,
+    ErrTooManyModules = 1,
+    ErrWorldDimensionsZero = 2,
 }
 
 /// Creates an instance of Wave Function Collapse world state and initializes it
@@ -104,7 +104,7 @@ pub unsafe extern "C" fn wfc_world_state_init(
     };
 
     if world_x == 0 || world_y == 0 || world_z == 0 {
-        return WfcWorldStateInitResult::WorldDimensionsZero;
+        return WfcWorldStateInitResult::ErrWorldDimensionsZero;
     }
 
     let adjacencies = adjacency_rules
@@ -114,7 +114,7 @@ pub unsafe extern "C" fn wfc_world_state_init(
     let world = World::new([world_x, world_y, world_z], adjacencies);
 
     if world.module_count() > MAX_MODULE_COUNT {
-        return WfcWorldStateInitResult::TooManyModules;
+        return WfcWorldStateInitResult::ErrTooManyModules;
     }
 
     let world_ptr = Box::into_raw(Box::new(world));
@@ -194,16 +194,15 @@ pub extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
 
 #[repr(u32)]
 pub enum WfcObserveResult {
-    Deterministic = 0,
-    Nondeterministic = 1,
-    Contradiction = 2,
+    OkDeterministic = 0,
+    ErrContradiction = 1,
 }
 
 /// Runs observations on the world until a deterministic or contradictory result
 /// is found.
 ///
-/// Returns [`WfcObserveResult::Deterministic`], if the world ended up in a
-/// deterministic state or [`WfcObserveResult::Contradiction`] if the
+/// Returns [`WfcObserveResult::OkDeterministic`], if the world ended up in a
+/// deterministic state or [`WfcObserveResult::ErrContradiction`] if the
 /// observation made by this function created a world where a slot is occupied
 /// by zero modules.
 ///
@@ -237,10 +236,10 @@ pub extern "C" fn wfc_observe(
         match status {
             WorldStatus::Nondeterministic => (),
             WorldStatus::Deterministic => {
-                return WfcObserveResult::Deterministic;
+                return WfcObserveResult::OkDeterministic;
             }
             WorldStatus::Contradiction => {
-                return WfcObserveResult::Contradiction;
+                return WfcObserveResult::ErrContradiction;
             }
         }
     }
@@ -249,8 +248,8 @@ pub extern "C" fn wfc_observe(
 #[repr(u32)]
 pub enum WfcWorldStateSlotsSetResult {
     Ok = 0,
-    OkNotCanonical = 1,
-    WorldContradictory = 2,
+    OkWorldNotCanonical = 1,
+    ErrWorldContradictory = 2,
 }
 
 /// Writes Wave Function Collapse slots from `slots_ptr` and `slots_len` into
@@ -280,14 +279,15 @@ pub enum WfcWorldStateSlotsSetResult {
 /// ```
 ///
 /// If this function returns
-/// [`WfcWorldStateSlotsSetResult::WorldContradictory`], the provided handle
+/// [`WfcWorldStateSlotsSetResult::ErrWorldContradictory`], the provided handle
 /// becomes invalid. It will become valid once again when passed to this
 /// function and [`WfcWorldStateSlotsSetResult::Ok`] or
-/// [`WfcWorldStateSlotsSetResult::OkNotCanonical`] is returned.
+/// [`WfcWorldStateSlotsSetResult::OkWorldNotCanonical`] is returned.
 ///
 /// If the modules in the provided slots could still be collapsed according to
 /// the current rule set, the world is not canonical. This function fixes that
-/// and returns [`WfcWorldStateSlotsSetResult::OkNotCanonical`] as a warning.
+/// and returns [`WfcWorldStateSlotsSetResult::OkWorldNotCanonical`] as a
+/// warning.
 ///
 /// # Safety
 ///
@@ -323,11 +323,11 @@ pub unsafe extern "C" fn wfc_world_state_slots_set(
     // adjacency rule constraints are initially satisfied.
     let (world_changed, world_status) = world.ensure_constraints();
     if world_status == WorldStatus::Contradiction {
-        return WfcWorldStateSlotsSetResult::WorldContradictory;
+        return WfcWorldStateSlotsSetResult::ErrWorldContradictory;
     }
 
     if world_changed {
-        WfcWorldStateSlotsSetResult::OkNotCanonical
+        WfcWorldStateSlotsSetResult::OkWorldNotCanonical
     } else {
         WfcWorldStateSlotsSetResult::Ok
     }

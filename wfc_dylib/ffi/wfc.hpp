@@ -11,21 +11,20 @@ enum class AdjacencyRuleKind : uint32_t {
 };
 
 enum class WfcObserveResult : uint32_t {
-  Deterministic = 0,
-  Nondeterministic = 1,
-  Contradiction = 2,
+  OkDeterministic = 0,
+  ErrContradiction = 1,
 };
 
 enum class WfcWorldStateInitResult : uint32_t {
   Ok = 0,
-  TooManyModules = 1,
-  WorldDimensionsZero = 2,
+  ErrTooManyModules = 1,
+  ErrWorldDimensionsZero = 2,
 };
 
 enum class WfcWorldStateSlotsSetResult : uint32_t {
   Ok = 0,
-  OkNotCanonical = 1,
-  WorldContradictory = 2,
+  OkWorldNotCanonical = 1,
+  ErrWorldContradictory = 2,
 };
 
 /// An opaque handle to the Wave Function Collapse world state. Actually a
@@ -38,7 +37,8 @@ struct AdjacencyRule {
   uint8_t module_high;
 };
 
-/// An opaque handle to the PRNG state. Actually a pointer, but shhh!
+/// An opaque handle to the PRNG state used by the Wave Function Collapse
+/// implementation. Actually a pointer, but shhh!
 using WfcRngStateHandle = Pcg32*;
 
 extern "C" {
@@ -107,8 +107,8 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
 /// Runs observations on the world until a deterministic or contradictory result
 /// is found.
 ///
-/// Returns [`WfcObserveResult::Deterministic`], if the world ended up in a
-/// deterministic state or [`WfcObserveResult::Contradiction`] if the
+/// Returns [`WfcObserveResult::OkDeterministic`], if the world ended up in a
+/// deterministic state or [`WfcObserveResult::ErrContradiction`] if the
 /// observation made by this function created a world where a slot is occupied
 /// by zero modules.
 ///
@@ -152,14 +152,15 @@ WfcObserveResult wfc_observe(WfcWorldStateHandle wfc_world_state_handle,
 /// ```
 ///
 /// If this function returns
-/// [`WfcWorldStateSlotsSetResult::WorldContradictory`], the provided handle
+/// [`WfcWorldStateSlotsSetResult::ErrWorldContradictory`], the provided handle
 /// becomes invalid. It will become valid once again when passed to this
 /// function and [`WfcWorldStateSlotsSetResult::Ok`] or
-/// [`WfcWorldStateSlotsSetResult::OkNotCanonical`] is returned.
+/// [`WfcWorldStateSlotsSetResult::OkWorldNotCanonical`] is returned.
 ///
 /// If the modules in the provided slots could still be collapsed according to
 /// the current rule set, the world is not canonical. This function fixes that
-/// and returns [`WfcWorldStateSlotsSetResult::OkNotCanonical`] as a warning.
+/// and returns [`WfcWorldStateSlotsSetResult::OkWorldNotCanonical`] as a
+/// warning.
 ///
 /// # Safety
 ///
