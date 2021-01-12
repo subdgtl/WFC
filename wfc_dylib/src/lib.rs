@@ -144,6 +144,13 @@ pub extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldStateHand
     unsafe { Box::from_raw(wfc_world_state_handle.0) };
 }
 
+#[repr(u32)]
+pub enum WfcWorldStateSlotsSetResult {
+    Ok = 0,
+    OkWorldNotCanonical = 1,
+    ErrWorldContradictory = 2,
+}
+
 /// Writes Wave Function Collapse slots from `slots_ptr` and `slots_len` into
 /// the provided handle.
 ///
@@ -214,14 +221,10 @@ pub unsafe extern "C" fn wfc_world_state_slots_set(
     // Since we are importing custom world state, we can not be sure all
     // adjacency rule constraints are initially satisfied.
     let (world_changed, world_status) = world.ensure_constraints();
-    if world_status == WorldStatus::Contradiction {
-        return WfcWorldStateSlotsSetResult::ErrWorldContradictory;
-    }
-
-    if world_changed {
-        WfcWorldStateSlotsSetResult::OkWorldNotCanonical
-    } else {
-        WfcWorldStateSlotsSetResult::Ok
+    match (world_changed, world_status) {
+        (_, WorldStatus::Contradiction) => WfcWorldStateSlotsSetResult::ErrWorldContradictory,
+        (true, _) => WfcWorldStateSlotsSetResult::Ok,
+        (false, _) => WfcWorldStateSlotsSetResult::OkWorldNotCanonical,
     }
 }
 
@@ -328,15 +331,15 @@ pub extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
 
 #[repr(u32)]
 pub enum WfcObserveResult {
-    OkDeterministic = 0,
-    ErrContradiction = 1,
+    Deterministic = 0,
+    Contradiction = 1,
 }
 
 /// Runs observations on the world until a deterministic or contradictory result
 /// is found.
 ///
-/// Returns [`WfcObserveResult::OkDeterministic`], if the world ended up in a
-/// deterministic state or [`WfcObserveResult::ErrContradiction`] if the
+/// Returns [`WfcObserveResult::Deterministic`], if the world ended up in a
+/// deterministic state or [`WfcObserveResult::Contradiction`] if the
 /// observation made by this function created a world where a slot is occupied
 /// by zero modules.
 ///
@@ -377,13 +380,6 @@ pub extern "C" fn wfc_observe(
             }
         }
     }
-}
-
-#[repr(u32)]
-pub enum WfcWorldStateSlotsSetResult {
-    Ok = 0,
-    OkWorldNotCanonical = 1,
-    ErrWorldContradictory = 2,
 }
 
 fn import_slots(world: &mut World, world_state: &[[u64; 4]]) {

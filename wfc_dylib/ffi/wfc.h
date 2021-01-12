@@ -11,8 +11,8 @@ enum AdjacencyRuleKind {
 typedef uint32_t AdjacencyRuleKind;
 
 enum WfcObserveResult {
-  OkDeterministic = 0,
-  ErrContradiction = 1,
+  Deterministic = 0,
+  Contradiction = 1,
 };
 typedef uint32_t WfcObserveResult;
 
@@ -212,8 +212,8 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
  * Runs observations on the world until a deterministic or contradictory result
  * is found.
  *
- * Returns [`WfcObserveResult::OkDeterministic`], if the world ended up in a
- * deterministic state or [`WfcObserveResult::ErrContradiction`] if the
+ * Returns [`WfcObserveResult::Deterministic`], if the world ended up in a
+ * deterministic state or [`WfcObserveResult::Contradiction`] if the
  * observation made by this function created a world where a slot is occupied
  * by zero modules.
  *
