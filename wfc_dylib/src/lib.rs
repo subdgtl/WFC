@@ -14,8 +14,8 @@ use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
 
 use crate::convert::{cast_u8, cast_usize};
 
-/// Maximum number of modules supported to be sent with `wfc_world_state_get`
-/// and `wfc_world_state_set`.
+/// Maximum number of modules supported to be sent with
+/// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`].
 const MAX_MODULE_COUNT: usize = mem::size_of::<[u64; 4]>() * 8;
 
 // FIXME: Adjacency and AdjacencyKind are duplicated here only because otherwise
@@ -94,6 +94,20 @@ impl Into<Adjacency> for AdjacencyRule {
 // source and destination worlds.
 //
 // wfc_observe would take the source and destination worlds, and the RNG state.
+
+// XXX: Even better: do we really need source and target world state? They look
+// like they are only there because wfc_observe does multiple attempts, but if
+// it didn't, it could just return a result, and the caller could attempt again
+// by not changing the RNG and providing a backed-up version of the WFC
+// world. The attempt loop isn't nearly as hot as the observe
+// loop. wfc_world_state_init_from could also work if the provided world handle
+// is already initialized, in which case it would just do
+// World::clone_from. This approach simplifies the C API by removing the need to
+// source and target worlds, but gives more responsibility and control to the
+// user by making them implement the attempt loop and world state backup/restore
+// themselves.
+//
+// Consult with Jano!
 
 /// An opaque handle to the WFC canonical state. Actually a pointer, but shhh!
 #[repr(transparent)]
