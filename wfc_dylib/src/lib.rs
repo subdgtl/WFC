@@ -59,7 +59,8 @@ impl Into<Adjacency> for AdjacencyRule {
 #[repr(transparent)]
 pub struct WfcWorldStateHandle(*mut World);
 
-/// An opaque handle to the PRNG state. Actually a pointer, but shhh!
+/// An opaque handle to the PRNG state used by the Wave Function Collapse
+/// implementation. Actually a pointer, but shhh!
 #[repr(transparent)]
 pub struct WfcRngStateHandle(*mut rand_pcg::Pcg32);
 
