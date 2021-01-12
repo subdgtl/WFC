@@ -10,134 +10,122 @@ enum AdjacencyRuleKind {
 };
 typedef uint32_t AdjacencyRuleKind;
 
-enum WfcInitResult {
-  Ok = 0,
-  TooManyModules = 1,
-  WorldDimensionsZero = 2,
+enum WfcObserveResult {
+  Deterministic = 0,
+  Contradiction = 1,
 };
-typedef uint32_t WfcInitResult;
+typedef uint32_t WfcObserveResult;
 
-enum WfcWorldStateSetResult {
+enum WfcWorldStateInitResult {
   Ok = 0,
-  OkNotCanonical = 1,
-  WorldContradictory = 2,
+  ErrTooManyModules = 1,
+  ErrWorldDimensionsZero = 2,
 };
-typedef uint32_t WfcWorldStateSetResult;
+typedef uint32_t WfcWorldStateInitResult;
 
-typedef struct WfcState WfcState;
+enum WfcWorldStateSlotsSetResult {
+  Ok = 0,
+  OkWorldNotCanonical = 1,
+  ErrWorldContradictory = 2,
+};
+typedef uint32_t WfcWorldStateSlotsSetResult;
 
 /**
- * An opaque handle to `WfcState`. Actually a pointer, but shhh!
+ * An opaque handle to the Wave Function Collapse world state. Actually a
+ * pointer, but shhh!
  */
-typedef WfcState *Wfc;
+typedef World *WfcWorldStateHandle;
 
-typedef struct {
+typedef struct AdjacencyRule {
   AdjacencyRuleKind kind;
   uint8_t module_low;
   uint8_t module_high;
 } AdjacencyRule;
 
 /**
- * Frees an instance of Wave Function Collapse state.
- *
- * # Safety
- *
- * Behavior is undefined if any of the following conditions are violated:
- *
- * - `wfc` must be a valid handle created via `wfc_init` that returned
- *   `WfcInitResult::Ok` and *not yet* freed via `wfc_free`.
+ * An opaque handle to the PRNG state used by the Wave Function Collapse
+ * implementation. Actually a pointer, but shhh!
  */
-void wfc_free(Wfc wfc);
+typedef Pcg32 *WfcRngStateHandle;
 
 /**
- * Initializes Wave Function Collapse state with adjacency rules. The world
- * gets initialized with every module possible in every slot.
+ * Creates an instance of Wave Function Collapse world state and initializes it
+ * with adjacency rules. The world gets initialized with every module possible
+ * in every slot.
  *
  * To change the world state to a different configuration, use
- * `wfc_world_state_set`.
- *
- * The RNG used by the WFC algorithm requires 128 bits of random seed. It is
- * provided as two 64 bit unsigned integers: `rng_seed_low` and
- * `rng_seed_high`. They are expected to be little-endian on all platforms.
+ * [`wfc_world_state_slots_set`].
  *
  * # Safety
  *
  * Behavior is undefined if any of the following conditions are violated:
  *
- * - `wfc_ptr` will be written to. It must be non-null and aligned.
+ * - `wfc_world_state_handle_ptr` will be written to. It must be non-null and
+ *   aligned,
  *
  * - `adjacency_rules_ptr` and `adjacency_rules_len` are used to construct a
- *    slice. See `slice::from_raw_parts`.
+ *   slice. See [`std::slice::from_raw_parts`].
  */
-WfcInitResult wfc_init(Wfc *wfc_ptr,
-                       const AdjacencyRule *adjacency_rules_ptr,
-                       uintptr_t adjacency_rules_len,
-                       uint16_t world_x,
-                       uint16_t world_y,
-                       uint16_t world_z,
-                       uint64_t rng_seed_low,
-                       uint64_t rng_seed_high);
+WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_state_handle_ptr,
+                                             const struct AdjacencyRule *adjacency_rules_ptr,
+                                             uintptr_t adjacency_rules_len,
+                                             uint16_t world_x,
+                                             uint16_t world_y,
+                                             uint16_t world_z);
 
 /**
- * Runs observations on the world until a deterministic or contradictory result
- * is found.
- *
- * If contradictory result is found, the function tries again, up until
- * `max_attempts`.
- *
- * Returns the number of attemps it took to find a deterministic result or zero
- * if no deterministic result was found within `max_attempts` tries.
+ * Creates an instance of Wave Function Collapse world state as a copy of
+ * existing world state.
  *
  * # Safety
  *
  * Behavior is undefined if any of the following conditions are violated:
  *
- * - `wfc` must be a valid handle created via `wfc_init` that returned
- *   `WfcInitResult::Ok` and *not yet* freed via `wfc_free`.
+ * - `wfc_world_state_handle_ptr` will be written to. It must be non-null and
+ *   aligned.
+ *
+ * - `source_wfc_world_state_handle` must be a valid handle created via
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
  */
-uint32_t wfc_observe(Wfc wfc, uint32_t max_attempts);
+void wfc_world_state_init_from(WfcWorldStateHandle *wfc_world_state_handle_ptr,
+                               WfcWorldStateHandle source_wfc_world_state_handle);
 
 /**
- * Reads world state from the provided handle into `world_state_ptr` and
- * `world_state_len`.
- *
- * State is stored in sparse bit vectors where each bit encodes a module
- * present at that slot, e.g. a slot with 0th and 2nd bits set will contain
- * modules with ids 0 and 2.
- *
- * The bit vectors of state are stored in a three dimensional array (compacted
- * in a one dimensional array). To get to a slot state on position `[x, y, z]`,
- * first slice by Z, then Y, then X. E.g. for dimensions 2*2*2, the slots would
- * be in the following order:
- *
- * ```text
- * [0, 0, 0]
- * [1, 0, 0]
- * [0, 1, 0]
- * [1, 1, 0]
- * [0, 0, 1]
- * [1, 0, 1]
- * [0, 1, 1]
- * [1, 1, 1]
- * ```
+ * Copies data between two instances of Wave Function Collapse world state.
  *
  * # Safety
  *
  * Behavior is undefined if any of the following conditions are violated:
  *
- * - `wfc` must be a valid handle created via `wfc_init` that returned
- *   `WfcInitResult::Ok` and *not yet* freed via `wfc_free`.
- *
- * - `world_state_ptr` and `world_state_len` are used to construct a mutable slice. See
- *   `slice::from_raw_parts_mut`.
+ * - `destination_wfc_world_state_handle` and `source_wfc_world_state_handle`
+ *   must be valid handles created via [`wfc_world_state_init`] that returned
+ *   [`WfcWorldStateInitResult::Ok`] or [`wfc_world_state_init_from`] and not
+ *   yet freed via [`wfc_world_state_free`].
  */
-void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[4], uintptr_t world_state_len);
+void wfc_world_state_clone_from(WfcWorldStateHandle destination_wfc_world_state_handle,
+                                WfcWorldStateHandle source_wfc_world_state_handle);
 
 /**
- * Writes world state from `world_state_ptr` and `world_state_len` into the
- * provided handle.
+ * Frees an instance of Wave Function Collapse world state.
  *
- * State is stored in sparse bit vectors where each bit encodes a module
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_world_state_handle` must be a valid handle created via
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
+ */
+void wfc_world_state_free(WfcWorldStateHandle wfc_world_state_handle);
+
+/**
+ * Writes Wave Function Collapse slots from `slots_ptr` and `slots_len` into
+ * the provided handle.
+ *
+ * Slots are stored in sparse bit vectors where each bit encodes a module
  * present at that slot, e.g. a slot with 0th and 2nd bits set will contain
  * modules with ids 0 and 2.
  *
@@ -160,26 +148,123 @@ void wfc_world_state_get(Wfc wfc, uint64_t (*world_state_ptr)[4], uintptr_t worl
  * [1, 1, 1]
  * ```
  *
- * If this function returns `WfcWorldStateSetResult::WorldContradictory`, the
- * provided handle becomes invalid. It will become valid once again when passed
- * to this function and `WfcWorldStateSetResult::Ok` or
- * `WfcWorldStateSetResult::OkNotcanonical` is returned.
+ * If this function returns
+ * [`WfcWorldStateSlotsSetResult::ErrWorldContradictory`], the provided handle
+ * becomes invalid. It will become valid once again when passed to this
+ * function and [`WfcWorldStateSlotsSetResult::Ok`] or
+ * [`WfcWorldStateSlotsSetResult::OkWorldNotCanonical`] is returned.
  *
- * If the modules in slots in the provided world state could still be collapsed
- * according to the current rule set, the world is not canonical. This function
- * fixes that and returns `WfcWorldStateSetResult::OkNotCanonical` as a
+ * If the modules in the provided slots could still be collapsed according to
+ * the current rule set, the world is not canonical. This function fixes that
+ * and returns [`WfcWorldStateSlotsSetResult::OkWorldNotCanonical`] as a
  * warning.
  *
  * # Safety
  *
  * Behavior is undefined if any of the following conditions are violated:
  *
- * - `wfc` must be a valid handle created via `wfc_init` that returned
- *   `WfcInitResult::Ok` and *not yet* freed via `wfc_free`.
+ * - `wfc_world_state_handle` must be a valid handle created via
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
  *
- * - `world_state_ptr` and `world_state_len` are used to construct a slice. See
- *   `slice::from_raw_parts`.
+ * - `slots_ptr` and `slots_len` are used to construct a slice. See
+ *   [`std::slice::from_raw_parts`].
  */
-WfcWorldStateSetResult wfc_world_state_set(Wfc wfc,
-                                           const uint64_t (*world_state_ptr)[4],
-                                           uintptr_t world_state_len);
+WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_world_state_handle,
+                                                      const uint64_t (*slots_ptr)[4],
+                                                      uintptr_t slots_len);
+
+/**
+ * Reads slots from the provided handle into `slots_ptr` and `slots_len`.
+ *
+ * State is stored in sparse bit vectors where each bit encodes a module
+ * present at that slot, e.g. a slot with 0th and 2nd bits set will contain
+ * modules with ids 0 and 2.
+ *
+ * The bit vectors of state are stored in a three dimensional array (compacted
+ * in a one dimensional array). To get to a slot state on position `[x, y, z]`,
+ * first slice by Z, then Y, then X. E.g. for dimensions 2*2*2, the slots would
+ * be in the following order:
+ *
+ * ```text
+ * [0, 0, 0]
+ * [1, 0, 0]
+ * [0, 1, 0]
+ * [1, 1, 0]
+ * [0, 0, 1]
+ * [1, 0, 1]
+ * [0, 1, 1]
+ * [1, 1, 1]
+ * ```
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_world_state_handle` must be a valid handle created via
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
+ *
+ * - `slots_ptr` and `slots_len` are used to construct a mutable slice. See
+ *   [`std::slice::from_raw_parts_mut`].
+ */
+void wfc_world_state_slots_get(WfcWorldStateHandle wfc_world_state_handle,
+                               uint64_t (*slots_ptr)[4],
+                               uintptr_t slots_len);
+
+/**
+ * Creates an instance of pseudo-random number generator and initializes it
+ * with the provided seed.
+ *
+ * The PRNG used requires 128 bits of random seed. It is provided as two 64 bit
+ * unsigned integers: `rng_seed_low` and `rng_seed_high`. They are expected to
+ * be little-endian on all platforms.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_rng_state_handle_ptr` will be written to. It must be non-null and
+ *   aligned.
+ */
+void wfc_rng_state_init(WfcRngStateHandle *wfc_rng_state_handle_ptr,
+                        uint64_t rng_seed_low,
+                        uint64_t rng_seed_high);
+
+/**
+ * Frees an instance of Wave Function Collapse RNG state.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_rng_state_handle` must be a valid handle created via
+ *   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
+ */
+void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
+
+/**
+ * Runs observations on the world until a deterministic or contradictory result
+ * is found.
+ *
+ * Returns [`WfcObserveResult::Deterministic`], if the world ended up in a
+ * deterministic state or [`WfcObserveResult::Contradiction`] if the
+ * observation made by this function created a world where a slot is occupied
+ * by zero modules.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_world_state_handle` must be a valid handle created via
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
+ *
+ * - `wfc_rng_state_handle` must be a valid handle created via
+ *   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
+ */
+WfcObserveResult wfc_observe(WfcWorldStateHandle wfc_world_state_handle,
+                             WfcRngStateHandle wfc_rng_state_handle);

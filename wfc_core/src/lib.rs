@@ -83,8 +83,8 @@ impl Direction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorldStatus {
-    Nondeterministic,
     Deterministic,
+    Nondeterministic,
     Contradiction,
 }
 
