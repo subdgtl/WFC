@@ -74,25 +74,6 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
                                              uint16_t world_z);
 
 /**
- * Creates an instance of pseudo-random number generator and initializes it
- * with the provided seed.
- *
- * The PRNG used requires 128 bits of random seed. It is provided as two 64 bit
- * unsigned integers: `rng_seed_low` and `rng_seed_high`. They are expected to
- * be little-endian on all platforms.
- *
- * # Safety
- *
- * Behavior is undefined if any of the following conditions are violated:
- *
- * - `wfc_rng_state_handle_ptr` will be written to. It must be non-null and
- *   aligned.
- */
-void wfc_rng_state_init(WfcRngStateHandle *wfc_rng_state_handle_ptr,
-                        uint64_t rng_seed_low,
-                        uint64_t rng_seed_high);
-
-/**
  * Frees an instance of Wave Function Collapse world state.
  *
  * # Safety
@@ -104,41 +85,6 @@ void wfc_rng_state_init(WfcRngStateHandle *wfc_rng_state_handle_ptr,
  *   not yet freed via [`wfc_world_state_free`],
  */
 void wfc_world_state_free(WfcWorldStateHandle wfc_world_state_handle);
-
-/**
- * Frees an instance of Wave Function Collapse RNG state.
- *
- * # Safety
- *
- * Behavior is undefined if any of the following conditions are violated:
- *
- * - `wfc_rng_state_handle` must be a valid handle created via
- *   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
- */
-void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
-
-/**
- * Runs observations on the world until a deterministic or contradictory result
- * is found.
- *
- * Returns [`WfcObserveResult::OkDeterministic`], if the world ended up in a
- * deterministic state or [`WfcObserveResult::ErrContradiction`] if the
- * observation made by this function created a world where a slot is occupied
- * by zero modules.
- *
- * # Safety
- *
- * Behavior is undefined if any of the following conditions are violated:
- *
- * - `wfc_world_state_handle` must be a valid handle created via
- *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
- *   not yet freed via [`wfc_world_state_free`],
- *
- * - `wfc_rng_state_handle` must be a valid handle created via
- *   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
- */
-WfcObserveResult wfc_observe(WfcWorldStateHandle wfc_world_state_handle,
-                             WfcRngStateHandle wfc_rng_state_handle);
 
 /**
  * Writes Wave Function Collapse slots from `slots_ptr` and `slots_len` into
@@ -230,3 +176,57 @@ WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_wo
 void wfc_world_state_slots_get(WfcWorldStateHandle wfc_world_state_handle,
                                uint64_t (*slots_ptr)[4],
                                uintptr_t slots_len);
+
+/**
+ * Creates an instance of pseudo-random number generator and initializes it
+ * with the provided seed.
+ *
+ * The PRNG used requires 128 bits of random seed. It is provided as two 64 bit
+ * unsigned integers: `rng_seed_low` and `rng_seed_high`. They are expected to
+ * be little-endian on all platforms.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_rng_state_handle_ptr` will be written to. It must be non-null and
+ *   aligned.
+ */
+void wfc_rng_state_init(WfcRngStateHandle *wfc_rng_state_handle_ptr,
+                        uint64_t rng_seed_low,
+                        uint64_t rng_seed_high);
+
+/**
+ * Frees an instance of Wave Function Collapse RNG state.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_rng_state_handle` must be a valid handle created via
+ *   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
+ */
+void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
+
+/**
+ * Runs observations on the world until a deterministic or contradictory result
+ * is found.
+ *
+ * Returns [`WfcObserveResult::OkDeterministic`], if the world ended up in a
+ * deterministic state or [`WfcObserveResult::ErrContradiction`] if the
+ * observation made by this function created a world where a slot is occupied
+ * by zero modules.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_world_state_handle` must be a valid handle created via
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
+ *   not yet freed via [`wfc_world_state_free`],
+ *
+ * - `wfc_rng_state_handle` must be a valid handle created via
+ *   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
+ */
+WfcObserveResult wfc_observe(WfcWorldStateHandle wfc_world_state_handle,
+                             WfcRngStateHandle wfc_rng_state_handle);

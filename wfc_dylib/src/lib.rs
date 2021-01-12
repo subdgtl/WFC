@@ -126,37 +126,6 @@ pub unsafe extern "C" fn wfc_world_state_init(
     WfcWorldStateInitResult::Ok
 }
 
-/// Creates an instance of pseudo-random number generator and initializes it
-/// with the provided seed.
-///
-/// The PRNG used requires 128 bits of random seed. It is provided as two 64 bit
-/// unsigned integers: `rng_seed_low` and `rng_seed_high`. They are expected to
-/// be little-endian on all platforms.
-///
-/// # Safety
-///
-/// Behavior is undefined if any of the following conditions are violated:
-///
-/// - `wfc_rng_state_handle_ptr` will be written to. It must be non-null and
-///   aligned.
-#[no_mangle]
-pub unsafe extern "C" fn wfc_rng_state_init(
-    wfc_rng_state_handle_ptr: *mut WfcRngStateHandle,
-    rng_seed_low: u64,
-    rng_seed_high: u64,
-) {
-    let mut rng_seed = [0u8; 16];
-    rng_seed[0..8].copy_from_slice(&rng_seed_low.to_le_bytes());
-    rng_seed[8..16].copy_from_slice(&rng_seed_high.to_le_bytes());
-    let rng = rand_pcg::Pcg32::from_seed(rng_seed);
-
-    let rng_ptr = Box::into_raw(Box::new(rng));
-    let wfc_rng_state_handle = WfcRngStateHandle(rng_ptr);
-
-    assert!(!wfc_rng_state_handle_ptr.is_null());
-    *wfc_rng_state_handle_ptr = wfc_rng_state_handle;
-}
-
 /// Frees an instance of Wave Function Collapse world state.
 ///
 /// # Safety
@@ -173,83 +142,6 @@ pub extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldStateHand
     }
 
     unsafe { Box::from_raw(wfc_world_state_handle.0) };
-}
-
-/// Frees an instance of Wave Function Collapse RNG state.
-///
-/// # Safety
-///
-/// Behavior is undefined if any of the following conditions are violated:
-///
-/// - `wfc_rng_state_handle` must be a valid handle created via
-///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
-#[no_mangle]
-pub extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
-    if wfc_rng_state_handle.0.is_null() {
-        return;
-    }
-
-    unsafe { Box::from_raw(wfc_rng_state_handle.0) };
-}
-
-#[repr(u32)]
-pub enum WfcObserveResult {
-    OkDeterministic = 0,
-    ErrContradiction = 1,
-}
-
-/// Runs observations on the world until a deterministic or contradictory result
-/// is found.
-///
-/// Returns [`WfcObserveResult::OkDeterministic`], if the world ended up in a
-/// deterministic state or [`WfcObserveResult::ErrContradiction`] if the
-/// observation made by this function created a world where a slot is occupied
-/// by zero modules.
-///
-/// # Safety
-///
-/// Behavior is undefined if any of the following conditions are violated:
-///
-/// - `wfc_world_state_handle` must be a valid handle created via
-///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
-///   not yet freed via [`wfc_world_state_free`],
-///
-/// - `wfc_rng_state_handle` must be a valid handle created via
-///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
-#[no_mangle]
-pub extern "C" fn wfc_observe(
-    wfc_world_state_handle: WfcWorldStateHandle,
-    wfc_rng_state_handle: WfcRngStateHandle,
-) -> WfcObserveResult {
-    let world = unsafe {
-        assert!(!wfc_world_state_handle.0.is_null());
-        &mut *wfc_world_state_handle.0
-    };
-    let rng = unsafe {
-        assert!(!wfc_rng_state_handle.0.is_null());
-        &mut *wfc_rng_state_handle.0
-    };
-
-    loop {
-        let (_, status) = world.observe(rng);
-
-        match status {
-            WorldStatus::Nondeterministic => (),
-            WorldStatus::Deterministic => {
-                return WfcObserveResult::OkDeterministic;
-            }
-            WorldStatus::Contradiction => {
-                return WfcObserveResult::ErrContradiction;
-            }
-        }
-    }
-}
-
-#[repr(u32)]
-pub enum WfcWorldStateSlotsSetResult {
-    Ok = 0,
-    OkWorldNotCanonical = 1,
-    ErrWorldContradictory = 2,
 }
 
 /// Writes Wave Function Collapse slots from `slots_ptr` and `slots_len` into
@@ -384,6 +276,114 @@ pub unsafe extern "C" fn wfc_world_state_slots_get(
     };
 
     export_slots(world, slots);
+}
+
+/// Creates an instance of pseudo-random number generator and initializes it
+/// with the provided seed.
+///
+/// The PRNG used requires 128 bits of random seed. It is provided as two 64 bit
+/// unsigned integers: `rng_seed_low` and `rng_seed_high`. They are expected to
+/// be little-endian on all platforms.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_rng_state_handle_ptr` will be written to. It must be non-null and
+///   aligned.
+#[no_mangle]
+pub unsafe extern "C" fn wfc_rng_state_init(
+    wfc_rng_state_handle_ptr: *mut WfcRngStateHandle,
+    rng_seed_low: u64,
+    rng_seed_high: u64,
+) {
+    let mut rng_seed = [0u8; 16];
+    rng_seed[0..8].copy_from_slice(&rng_seed_low.to_le_bytes());
+    rng_seed[8..16].copy_from_slice(&rng_seed_high.to_le_bytes());
+    let rng = rand_pcg::Pcg32::from_seed(rng_seed);
+
+    let rng_ptr = Box::into_raw(Box::new(rng));
+    let wfc_rng_state_handle = WfcRngStateHandle(rng_ptr);
+
+    assert!(!wfc_rng_state_handle_ptr.is_null());
+    *wfc_rng_state_handle_ptr = wfc_rng_state_handle;
+}
+
+/// Frees an instance of Wave Function Collapse RNG state.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_rng_state_handle` must be a valid handle created via
+///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
+#[no_mangle]
+pub extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
+    if wfc_rng_state_handle.0.is_null() {
+        return;
+    }
+
+    unsafe { Box::from_raw(wfc_rng_state_handle.0) };
+}
+
+#[repr(u32)]
+pub enum WfcObserveResult {
+    OkDeterministic = 0,
+    ErrContradiction = 1,
+}
+
+/// Runs observations on the world until a deterministic or contradictory result
+/// is found.
+///
+/// Returns [`WfcObserveResult::OkDeterministic`], if the world ended up in a
+/// deterministic state or [`WfcObserveResult::ErrContradiction`] if the
+/// observation made by this function created a world where a slot is occupied
+/// by zero modules.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
+///   not yet freed via [`wfc_world_state_free`],
+///
+/// - `wfc_rng_state_handle` must be a valid handle created via
+///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
+#[no_mangle]
+pub extern "C" fn wfc_observe(
+    wfc_world_state_handle: WfcWorldStateHandle,
+    wfc_rng_state_handle: WfcRngStateHandle,
+) -> WfcObserveResult {
+    let world = unsafe {
+        assert!(!wfc_world_state_handle.0.is_null());
+        &mut *wfc_world_state_handle.0
+    };
+    let rng = unsafe {
+        assert!(!wfc_rng_state_handle.0.is_null());
+        &mut *wfc_rng_state_handle.0
+    };
+
+    loop {
+        let (_, status) = world.observe(rng);
+
+        match status {
+            WorldStatus::Nondeterministic => (),
+            WorldStatus::Deterministic => {
+                return WfcObserveResult::OkDeterministic;
+            }
+            WorldStatus::Contradiction => {
+                return WfcObserveResult::ErrContradiction;
+            }
+        }
+    }
+}
+
+#[repr(u32)]
+pub enum WfcWorldStateSlotsSetResult {
+    Ok = 0,
+    OkWorldNotCanonical = 1,
+    ErrWorldContradictory = 2,
 }
 
 fn import_slots(world: &mut World, world_state: &[[u64; 4]]) {

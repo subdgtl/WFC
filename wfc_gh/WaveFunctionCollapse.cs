@@ -523,16 +523,16 @@ namespace wfc_gh
         ErrWorldDimensionsZero = 2,
     }
 
-    internal enum WfcObserveResult: uint {
-        OkDeterministic = 0,
-        ErrContradiction = 1,
-    }
-
     internal enum WfcWorldStateSlotsSetResult : uint
     {
         Ok = 0,
         OkWorldNotCanonical = 1,
         ErrWorldContradictory = 2,
+    }
+
+    internal enum WfcObserveResult: uint {
+        OkDeterministic = 0,
+        ErrContradiction = 1,
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -599,19 +599,7 @@ namespace wfc_gh
                                                                                    ushort world_z);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
-                                                               ulong rng_seed_low,
-                                                               ulong rng_seed_high);
-
-        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static extern void wfc_world_state_free(IntPtr wfc_world_state_handle);
-
-        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static extern void wfc_rng_state_free(IntPtr wfc_rng_state_handle);
-
-        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
-                                                            IntPtr wfc_rng_state_handle);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern WfcWorldStateSlotsSetResult wfc_world_state_slots_set(IntPtr wfc_world_state_handle,
@@ -622,6 +610,18 @@ namespace wfc_gh
         internal static unsafe extern void wfc_world_state_slots_get(IntPtr wfc_world_state_handle,
                                                                      SlotState* slots_ptr,
                                                                      UIntPtr slots_len);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
+                                                               ulong rng_seed_low,
+                                                               ulong rng_seed_high);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern void wfc_rng_state_free(IntPtr wfc_rng_state_handle);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
+                                                            IntPtr wfc_rng_state_handle);
     }
 
 }
