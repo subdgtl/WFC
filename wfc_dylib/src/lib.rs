@@ -373,10 +373,10 @@ pub extern "C" fn wfc_observe(
         match status {
             WorldStatus::Nondeterministic => (),
             WorldStatus::Deterministic => {
-                return WfcObserveResult::OkDeterministic;
+                return WfcObserveResult::Deterministic;
             }
             WorldStatus::Contradiction => {
-                return WfcObserveResult::ErrContradiction;
+                return WfcObserveResult::Contradiction;
             }
         }
     }
