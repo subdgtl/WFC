@@ -372,19 +372,14 @@ namespace wfc_gh
             // -- Run the thing and **pray** --
             //
 
-            // XXX
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Starting");
-
             IntPtr wfcRngStateHandle = IntPtr.Zero;
             IntPtr wfcWorldStateHandle = IntPtr.Zero;
             unsafe
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "wfc_rng_state_init");
                 Native.wfc_rng_state_init(&wfcRngStateHandle, rngSeedLow, rngSeedHigh);
 
                 fixed (AdjacencyRule* adjacencyRulesPtr = &adjacencyRules[0])
                 {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "wfc_world_state_init");
                     var result = Native.wfc_world_state_init(&wfcWorldStateHandle,
                                                              adjacencyRulesPtr,
                                                              (UIntPtr)adjacencyRules.Length,
@@ -413,29 +408,28 @@ namespace wfc_gh
 
                 fixed (SlotState* slotsPtr = &slots[0])
                 {
-                   AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "wfc_world_state_slots_set");
-                   var result = Native.wfc_world_state_slots_set(wfcWorldStateHandle,
-                                                                 slotsPtr,
-                                                                 (UIntPtr)slots.Length);
-                   switch (result)
-                   {
-                       case WfcWorldStateSlotsSetResult.Ok:
-                           // All good
-                           stats.worldNotCanonical = false;
-                           break;
-                       case WfcWorldStateSlotsSetResult.OkWorldNotCanonical:
-                           // All good, but we the slots we gave were not
-                           // canonical. wfc_world_state_slots_set fixed that for us.
-                           stats.worldNotCanonical = true;
-                           break;
-                       case WfcWorldStateSlotsSetResult.ErrWorldContradictory:
-                           AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                             "WFC solver failed: World state is contradictory");
-                           return;
-                       default:
-                           Debug.Assert(false);
-                           return;
-                   }
+                    var result = Native.wfc_world_state_slots_set(wfcWorldStateHandle,
+                                                                  slotsPtr,
+                                                                  (UIntPtr)slots.Length);
+                    switch (result)
+                    {
+                        case WfcWorldStateSlotsSetResult.Ok:
+                            // All good
+                            stats.worldNotCanonical = false;
+                            break;
+                        case WfcWorldStateSlotsSetResult.OkWorldNotCanonical:
+                            // All good, but we the slots we gave were not
+                            // canonical. wfc_world_state_slots_set fixed that for us.
+                            stats.worldNotCanonical = true;
+                            break;
+                        case WfcWorldStateSlotsSetResult.ErrWorldContradictory:
+                            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                              "WFC solver failed: World state is contradictory");
+                            return;
+                        default:
+                            Debug.Assert(false);
+                            return;
+                    }
                 }
             }
 
@@ -444,7 +438,6 @@ namespace wfc_gh
 
             while (!foundDeterministic && attempts < maxAttempts)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "wfc_observe");
                 var result = Native.wfc_observe(wfcWorldStateHandle, wfcRngStateHandle);
                 if (result == WfcObserveResult.Deterministic)
                 {
@@ -465,14 +458,13 @@ namespace wfc_gh
             {
                 fixed (SlotState* slotsPtr = &slots[0])
                 {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "wfc_world_state_slots_get");
-                    Native.wfc_world_state_slots_get(wfcWorldStateHandle, slotsPtr, (UIntPtr)slots.Length);
+                    Native.wfc_world_state_slots_get(wfcWorldStateHandle,
+                                                     slotsPtr,
+                                                     (UIntPtr)slots.Length);
                 }
             }
 
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "wfc_world_state_free");
             Native.wfc_world_state_free(wfcWorldStateHandle);
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "wfc_rng_state_free");
             Native.wfc_rng_state_free(wfcRngStateHandle);
 
             //
