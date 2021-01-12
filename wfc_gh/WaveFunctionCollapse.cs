@@ -374,6 +374,7 @@ namespace wfc_gh
 
             IntPtr wfcRngStateHandle = IntPtr.Zero;
             IntPtr wfcWorldStateHandle = IntPtr.Zero;
+            IntPtr wfcWorldStateHandleBackup = IntPtr.Zero;
             unsafe
             {
                 Native.wfc_rng_state_init(&wfcRngStateHandle, rngSeedLow, rngSeedHigh);
@@ -431,6 +432,8 @@ namespace wfc_gh
                             return;
                     }
                 }
+
+                Native.wfc_world_state_init_from(&wfcWorldStateHandleBackup, wfcWorldStateHandle);
             }
 
             var foundDeterministic = false;
@@ -442,6 +445,11 @@ namespace wfc_gh
                 if (result == WfcObserveResult.Deterministic)
                 {
                     foundDeterministic = true;
+                }
+                else
+                {
+                    Native.wfc_world_state_clone_from(wfcWorldStateHandle,
+                                                      wfcWorldStateHandleBackup);
                 }
 
                 attempts++;
@@ -616,6 +624,14 @@ namespace wfc_gh
                                                                                    ushort world_x,
                                                                                    ushort world_y,
                                                                                    ushort world_z);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern void wfc_world_state_init_from(IntPtr* wfc_world_state_handle_ptr,
+                                                                     IntPtr source_wfc_world_state_handle);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern void wfc_world_state_clone_from(IntPtr destination_wfc_world_state_handle,
+                                                                      IntPtr source_wfc_world_state_handle);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static extern void wfc_world_state_free(IntPtr wfc_world_state_handle);
