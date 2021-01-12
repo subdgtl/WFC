@@ -136,7 +136,7 @@ namespace wfc_gh
             {
                 HashSet<string> allModules = new HashSet<string>();
 
-                for (int i = 0; i < adjacencyRulesMinCount; ++i)
+                for (var i = 0; i < adjacencyRulesMinCount; ++i)
                 {
                     allModules.Add(adjacencyRulesModuleLow[i]);
                     allModules.Add(adjacencyRulesModuleHigh[i]);
@@ -155,7 +155,7 @@ namespace wfc_gh
             var moduleToName = new Dictionary<byte, string>();
             var adjacencyRules = new AdjacencyRule[adjacencyRulesMinCount];
 
-            for (int i = 0; i < adjacencyRulesMinCount; ++i)
+            for (var i = 0; i < adjacencyRulesMinCount; ++i)
             {
                 string axisStr = adjacencyRulesAxis[i];
                 string lowStr = adjacencyRulesModuleLow[i];
@@ -260,7 +260,7 @@ namespace wfc_gh
             var slots = new SlotState[worldDimensions];
 
             // ... WE do need to clear it to zero, however. C# does not initialize slot_state for us!
-            for (int i = 0; i < slots.Length; ++i)
+            for (var i = 0; i < slots.Length; ++i)
             {
                 unsafe
                 {
@@ -279,7 +279,7 @@ namespace wfc_gh
             DA.GetDataList(IN_PARAM_WORLD_SLOT_MODULE, worldSlotModules);
 
             int worldSlotMinCount = Math.Min(worldSlotPositions.Count, worldSlotModules.Count);
-            for (int i = 0; i < worldSlotMinCount; ++i)
+            for (var i = 0; i < worldSlotMinCount; ++i)
             {
                 var position = worldSlotPositions[i];
                 string moduleStr = worldSlotModules[i];
@@ -372,9 +372,9 @@ namespace wfc_gh
             // -- Run the thing and **pray** --
             //
 
-            IntPtr wfcRngStateHandle = IntPtr.Zero;
-            IntPtr wfcWorldStateHandle = IntPtr.Zero;
-            IntPtr wfcWorldStateHandleBackup = IntPtr.Zero;
+            var wfcRngStateHandle = IntPtr.Zero;
+            var wfcWorldStateHandle = IntPtr.Zero;
+            var wfcWorldStateHandleBackup = IntPtr.Zero;
             unsafe
             {
                 Native.wfc_rng_state_init(&wfcRngStateHandle, rngSeedLow, rngSeedHigh);
@@ -484,7 +484,7 @@ namespace wfc_gh
 
             worldSlotPositions.Clear();
             worldSlotModules.Clear();
-            for (int i = 0; i < slots.Length; ++i)
+            for (var i = 0; i < slots.Length; ++i)
             {
                 // Assume the result is deterministic and only take the first set bit
                 short module = short.MinValue;
