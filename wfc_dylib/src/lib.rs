@@ -1,4 +1,4 @@
-//! # The WFC dynamic library C API
+//! # The Wave Function Collapse dynamic library C API
 //!
 //! None of the functions provided here are thread safe. If they are going to be
 //! called from different threads, a per-handle synchronization must be
@@ -17,11 +17,6 @@ use crate::convert::{cast_u8, cast_usize};
 /// Maximum number of modules supported to be sent with
 /// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`].
 const MAX_MODULE_COUNT: usize = mem::size_of::<[u64; 4]>() * 8;
-
-// FIXME: Adjacency and AdjacencyKind are duplicated here only because otherwise
-// cbindgen can't find them easily in wfc_core. cbindgen could possbily be
-// configured to crawl certain allowed types in dependencies only, without
-// bringing over too much stuff.
 
 #[repr(u32)]
 #[derive(Clone, Copy)]
@@ -59,114 +54,47 @@ impl Into<Adjacency> for AdjacencyRule {
     }
 }
 
-// FIXME: Make the handles proper opaque handles and store state in an
-// array. https://floooh.github.io/2018/06/17/handles-vs-pointers.html
-
-// FIXME: This world_initial <-> world duplication makes the API
-// non-intuitive. On the outside it isn't obvious that you can run wfc_observe
-// multiple times without resetting the state manually.
-//
-// This could be made explicit by splitting the `Wfc` handle into two:
-// e.g. WfcCanonicalState and WfcSimState. WfcCanonicalState would contain the
-// world_initial field (world_canonical), while WfcSimState would contain the
-// world and rng fields. The init and free functions would need to be duplicated
-// between the two, e.g wfc_canonical_state_init and wfc_sim_state_init. To
-// create an instance of WfcSimState, WfcCanonicalState would be required.
-// wfc_world_state_set would only operate on WfcCanonicalstate (and would be
-// called something like wfc_canonical_state_set), and wfc_world_state_get would
-// operate on WfcSimState (and be called something like
-// wfc_sim_state_get). wfc_observe would be the way to sift state from
-// WfcCanonicalstate to WfcSimState.
-
-// XXX: The above fixme can cause incorrect RNG usage, where the RNG is not
-// correctly re-seeded (actually the current API can cause it too). Does the
-// following split make sense?
-//
-// - WfcWorldState and WfcWorldStateHandle (the user would create two of these,
-//   source and destination, with methods being wfc_world_state_init,
-//   wfc_world_state_init_from, and wfc_world_state_free). The init_from would
-//   be a cheaper version of init.
-//
-// - WfcRngState and WfcRngStateHandle (with wfc_rng_state_init and
-//   wfc_rng_state_free)
-//
-// wfc_world_state_slots_get and wfc_world_state_slots_set would work on both
-// source and destination worlds.
-//
-// wfc_observe would take the source and destination worlds, and the RNG state.
-
-// XXX: Even better: do we really need source and target world state? They look
-// like they are only there because wfc_observe does multiple attempts, but if
-// it didn't, it could just return a result, and the caller could attempt again
-// by not changing the RNG and providing a backed-up version of the WFC
-// world. The attempt loop isn't nearly as hot as the observe
-// loop. wfc_world_state_init_from could also work if the provided world handle
-// is already initialized, in which case it would just do
-// World::clone_from. This approach simplifies the C API by removing the need to
-// source and target worlds, but gives more responsibility and control to the
-// user by making them implement the attempt loop and world state backup/restore
-// themselves.
-//
-// Consult with Jano!
-
-/// An opaque handle to the WFC canonical state. Actually a pointer, but shhh!
+/// An opaque handle to the Wave Function Collapse world state. Actually a
+/// pointer, but shhh!
 #[repr(transparent)]
-pub struct WfcCanonicalStateHandle(*mut WfcCanonicalState);
+pub struct WfcWorldStateHandle(*mut World);
 
-struct WfcCanonicalState {
-    world: World,
-}
-
-/// An opaque handle to the WFC simulation state. Actually a pointer, but shhh!
+/// An opaque handle to the PRNG state. Actually a pointer, but shhh!
 #[repr(transparent)]
-pub struct WfcSimulationStateHandle(*mut WfcSimulationState);
-
-struct WfcSimulationState {
-    world: World,
-    rng: rand_pcg::Pcg32,
-}
+pub struct WfcRngStateHandle(*mut rand_pcg::Pcg32);
 
 #[repr(u32)]
-pub enum WfcCanonicalStateInitResult {
+pub enum WfcWorldStateInitResult {
     Ok = 0,
     TooManyModules = 1,
     WorldDimensionsZero = 2,
 }
 
-#[repr(u32)]
-pub enum WfcSimulationStateInitResult {
-    Ok = 0,
-}
-
-/// Initializes Wave Function Collapse canonical state with adjacency rules. The
-/// world gets initialized with every module possible in every slot.
+/// Creates an instance of Wave Function Collapse world state and initializes it
+/// with adjacency rules. The world gets initialized with every module possible
+/// in every slot.
 ///
 /// To change the world state to a different configuration, use
-/// [`wfc_canonical_state_world_slots_set`].
-///
-/// XXX: Move RNG comment to wfc_simulation_state_init
-///
-/// The RNG used by the WFC algorithm requires 128 bits of random seed. It is
-/// provided as two 64 bit unsigned integers: `rng_seed_low` and
-/// `rng_seed_high`. They are expected to be little-endian on all platforms.
+/// [`wfc_world_state_slots_set`].
 ///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
 ///
-/// - `wfc_ptr` will be written to. It must be non-null and aligned.
+/// - `wfc_world_state_handle_ptr` will be written to. It must be non-null and
+///   aligned,
 ///
 /// - `adjacency_rules_ptr` and `adjacency_rules_len` are used to construct a
-///    slice. See [`std::slice::from_raw_parts`].
+///   slice. See [`std::slice::from_raw_parts`].
 #[no_mangle]
-pub unsafe extern "C" fn wfc_canonical_state_init(
-    wfc_canonical_state_handle_ptr: *mut WfcCanonicalStateHandle,
+pub unsafe extern "C" fn wfc_world_state_init(
+    wfc_world_state_handle_ptr: *mut WfcWorldStateHandle,
     adjacency_rules_ptr: *const AdjacencyRule,
     adjacency_rules_len: usize,
     world_x: u16,
     world_y: u16,
     world_z: u16,
-) -> WfcCanonicalStateInitResult {
+) -> WfcWorldStateInitResult {
     let adjacency_rules = {
         assert!(!adjacency_rules_ptr.is_null());
         assert_ne!(adjacency_rules_len, 0);
@@ -175,7 +103,7 @@ pub unsafe extern "C" fn wfc_canonical_state_init(
     };
 
     if world_x == 0 || world_y == 0 || world_z == 0 {
-        return WfcCanonicalStateInitResult::WorldDimensionsZero;
+        return WfcWorldStateInitResult::WorldDimensionsZero;
     }
 
     let adjacencies = adjacency_rules
@@ -185,153 +113,149 @@ pub unsafe extern "C" fn wfc_canonical_state_init(
     let world = World::new([world_x, world_y, world_z], adjacencies);
 
     if world.module_count() > MAX_MODULE_COUNT {
-        return WfcCanonicalStateInitResult::TooManyModules;
+        return WfcWorldStateInitResult::TooManyModules;
     }
 
-    let wfc_canonical_state_ptr = Box::into_raw(Box::new(WfcCanonicalState { world }));
-    let wfc_canonical_state_handle = WfcCanonicalStateHandle(wfc_canonical_state_ptr);
+    let world_ptr = Box::into_raw(Box::new(world));
+    let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
 
-    assert!(!wfc_canonical_state_handle_ptr.is_null());
-    *wfc_canonical_state_handle_ptr = wfc_canonical_state_handle;
+    assert!(!wfc_world_state_handle_ptr.is_null());
+    *wfc_world_state_handle_ptr = wfc_world_state_handle;
 
-    WfcCanonicalStateInitResult::Ok
+    WfcWorldStateInitResult::Ok
 }
 
+/// Creates an instance of pseudo-random number generator and initializes it
+/// with the provided seed.
+///
+/// The PRNG used requires 128 bits of random seed. It is provided as two 64 bit
+/// unsigned integers: `rng_seed_low` and `rng_seed_high`. They are expected to
+/// be little-endian on all platforms.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_rng_state_handle_ptr` will be written to. It must be non-null and
+///   aligned.
 #[no_mangle]
-pub unsafe extern "C" fn wfc_simulation_state_init(
-    wfc_simulation_state_handle_ptr: *mut WfcSimulationStateHandle,
-    wfc_canonical_state_handle: WfcCanonicalStateHandle,
+pub unsafe extern "C" fn wfc_rng_state_init(
+    wfc_rng_state_handle_ptr: *mut WfcRngStateHandle,
     rng_seed_low: u64,
     rng_seed_high: u64,
-) -> WfcSimulationStateInitResult {
-    let wfc_canonical_state = unsafe {
-        assert!(!wfc_canonical_state_handle.0.is_null());
-        &mut *wfc_canonical_state_handle.0
-    };
-
+) {
     let mut rng_seed = [0u8; 16];
     rng_seed[0..8].copy_from_slice(&rng_seed_low.to_le_bytes());
     rng_seed[8..16].copy_from_slice(&rng_seed_high.to_le_bytes());
     let rng = rand_pcg::Pcg32::from_seed(rng_seed);
 
-    let world = wfc_canonical_state.world.clone();
+    let rng_ptr = Box::into_raw(Box::new(rng));
+    let wfc_rng_state_handle = WfcRngStateHandle(rng_ptr);
 
-    let wfc_simulation_state_ptr = Box::into_raw(Box::new(WfcSimulationState { world, rng }));
-    let wfc_simulation_state_handle = WfcSimulationStateHandle(wfc_simulation_state_ptr);
-
-    assert!(!wfc_simulation_state_handle_ptr.is_null());
-    *wfc_simulation_state_handle_ptr = wfc_simulation_state_handle;
-
-    WfcSimulationStateInitResult::Ok
+    assert!(!wfc_rng_state_handle_ptr.is_null());
+    *wfc_rng_state_handle_ptr = wfc_rng_state_handle;
 }
 
-/// Frees an instance of Wave Function Collapse canonical state.
+/// Frees an instance of Wave Function Collapse world state.
 ///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
 ///
-/// - `wfc_canonical_state_handle` must be a valid handle created via
-/// [`wfc_canonical_state_init`] that returned
-/// [`WfcCanonicalStateInitResult::Ok`] or
-/// [`WfcCanonicalStateInitResult::OkNotcanonical`] and not yet freed via this
-/// function.
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
+///   not yet freed via [`wfc_world_state_free`],
 #[no_mangle]
-pub extern "C" fn wfc_canonical_state_free(wfc_canonical_state_handle: WfcCanonicalStateHandle) {
-    if wfc_canonical_state_handle.0.is_null() {
+pub extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldStateHandle) {
+    if wfc_world_state_handle.0.is_null() {
         return;
     }
 
-    unsafe { Box::from_raw(wfc_canonical_state_handle.0) };
+    unsafe { Box::from_raw(wfc_world_state_handle.0) };
 }
 
-/// Frees an instance of Wave Function Collapse simulation state.
+/// Frees an instance of Wave Function Collapse RNG state.
 ///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
 ///
-/// - `wfc_simulation_state_handle` must be a valid handle created via
-/// [`wfc_simulation_state_init`] that returned
-/// [`WfcSimulationStateInitResult::Ok`] and not yet freed via this function.
+/// - `wfc_rng_state_handle` must be a valid handle created via
+///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
 #[no_mangle]
-pub extern "C" fn wfc_simulation_state_free(wfc_simulation_state_handle: WfcSimulationStateHandle) {
-    if wfc_simulation_state_handle.0.is_null() {
+pub extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
+    if wfc_rng_state_handle.0.is_null() {
         return;
     }
 
-    unsafe { Box::from_raw(wfc_simulation_state_handle.0) };
+    unsafe { Box::from_raw(wfc_rng_state_handle.0) };
+}
+
+#[repr(u32)]
+pub enum WfcObserveResult {
+    Deterministic = 0,
+    Nondeterministic = 1,
+    Contradiction = 2,
 }
 
 /// Runs observations on the world until a deterministic or contradictory result
 /// is found.
 ///
-/// If contradictory result is found, the function tries again, up until
-/// `max_attempts`.
-///
-/// Returns the number of attemps it took to find a deterministic result or zero
-/// if no deterministic result was found within `max_attempts` tries.
+/// Returns [`WfcObserveResult::Deterministic`], if the world ended up in a
+/// deterministic state or [`WfcObserveResult::Contradiction`] if the
+/// observation made by this function created a world where a slot is occupied
+/// by zero modules.
 ///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
 ///
-/// - `wfc` must be a valid handle created via `wfc_init` that returned
-///   `WfcInitResult::Ok` and not yet freed via `wfc_free`.
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
+///   not yet freed via [`wfc_world_state_free`],
+///
+/// - `wfc_rng_state_handle` must be a valid handle created via
+///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
 #[no_mangle]
-pub extern "C" fn wfc_observe(wfc: Wfc, max_attempts: u32) -> u32 {
-    let wfc_state = unsafe {
-        assert!(!wfc.0.is_null());
-        &mut *wfc.0
+pub extern "C" fn wfc_observe(
+    wfc_world_state_handle: WfcWorldStateHandle,
+    wfc_rng_state_handle: WfcRngStateHandle,
+) -> WfcObserveResult {
+    let world = unsafe {
+        assert!(!wfc_world_state_handle.0.is_null());
+        &mut *wfc_world_state_handle.0
+    };
+    let rng = unsafe {
+        assert!(!wfc_rng_state_handle.0.is_null());
+        &mut *wfc_rng_state_handle.0
     };
 
-    let mut deterministic = false;
-    let mut attempts = 0;
+    loop {
+        let (_, status) = world.observe(rng);
 
-    while attempts < max_attempts && !deterministic {
-        // Must clone on first attempt as well, because this might not be the
-        // first time someone called us.
-        wfc_state.world.clone_from(&wfc_state.world_initial);
-
-        let status = loop {
-            let (_, status) = wfc_state.world.observe(&mut wfc_state.rng);
-
-            match status {
-                WorldStatus::Nondeterministic => (),
-                WorldStatus::Deterministic => {
-                    break WorldStatus::Deterministic;
-                }
-                WorldStatus::Contradiction => {
-                    break WorldStatus::Contradiction;
-                }
+        match status {
+            WorldStatus::Nondeterministic => (),
+            WorldStatus::Deterministic => {
+                return WfcObserveResult::Deterministic;
             }
-        };
-
-        if status == WorldStatus::Deterministic {
-            deterministic = true;
+            WorldStatus::Contradiction => {
+                return WfcObserveResult::Contradiction;
+            }
         }
-
-        attempts += 1;
-    }
-
-    if deterministic {
-        attempts
-    } else {
-        0
     }
 }
 
 #[repr(u32)]
-pub enum WfcWorldStateSetResult {
+pub enum WfcWorldStateSlotsSetResult {
     Ok = 0,
     OkNotCanonical = 1,
     WorldContradictory = 2,
 }
 
-/// Writes world state from `world_state_ptr` and `world_state_len` into the
-/// provided handle.
+/// Writes Wave Function Collapse slots from `slots_ptr` and `slots_len` into
+/// the provided handle.
 ///
-/// State is stored in sparse bit vectors where each bit encodes a module
+/// Slots are stored in sparse bit vectors where each bit encodes a module
 /// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
 /// modules with ids 0 and 2.
 ///
@@ -354,65 +278,61 @@ pub enum WfcWorldStateSetResult {
 /// [1, 1, 1]
 /// ```
 ///
-/// If this function returns `WfcWorldStateSetResult::WorldContradictory`, the
-/// provided handle becomes invalid. It will become valid once again when passed
-/// to this function and `WfcWorldStateSetResult::Ok` or
-/// `WfcWorldStateSetResult::OkNotcanonical` is returned.
+/// If this function returns
+/// [`WfcWorldStateSlotsSetResult::WorldContradictory`], the provided handle
+/// becomes invalid. It will become valid once again when passed to this
+/// function and [`WfcWorldStateSlotsSetResult::Ok`] or
+/// [`WfcWorldStateSlotsSetResult::OkNotCanonical`] is returned.
 ///
-/// If the modules in slots in the provided world state could still be collapsed
-/// according to the current rule set, the world is not canonical. This function
-/// fixes that and returns `WfcWorldStateSetResult::OkNotCanonical` as a
-/// warning.
+/// If the modules in the provided slots could still be collapsed according to
+/// the current rule set, the world is not canonical. This function fixes that
+/// and returns [`WfcWorldStateSlotsSetResult::OkNotCanonical`] as a warning.
 ///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
 ///
-/// - `wfc` must be a valid handle created via `wfc_init` that returned
-///   `WfcInitResult::Ok` and *not yet* freed via `wfc_free`.
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
+///   not yet freed via [`wfc_world_state_free`],
 ///
-/// - `world_state_ptr` and `world_state_len` are used to construct a slice. See
-///   `slice::from_raw_parts`.
+/// - `slots_ptr` and `slots_len` are used to construct a slice. See
+///   [`std::slice::from_raw_parts`].
 #[no_mangle]
-pub unsafe extern "C" fn wfc_world_state_set(
-    wfc: Wfc,
-    world_state_ptr: *const [u64; 4],
-    world_state_len: usize,
-) -> WfcWorldStateSetResult {
-    let wfc_state = {
-        assert!(!wfc.0.is_null());
-        &mut *wfc.0
+pub unsafe extern "C" fn wfc_world_state_slots_set(
+    wfc_world_state_handle: WfcWorldStateHandle,
+    slots_ptr: *const [u64; 4],
+    slots_len: usize,
+) -> WfcWorldStateSlotsSetResult {
+    let world = {
+        assert!(!wfc_world_state_handle.0.is_null());
+        &mut *wfc_world_state_handle.0
     };
 
-    let world_state = {
-        assert!(!world_state_ptr.is_null());
-        assert_ne!(world_state_len, 0);
-        assert!(world_state_len * mem::size_of::<[u64; 4]>() < isize::MAX as usize);
-        slice::from_raw_parts(world_state_ptr, world_state_len)
+    let slots = {
+        assert!(!slots_ptr.is_null());
+        assert_ne!(slots_len, 0);
+        assert!(slots_len * mem::size_of::<[u64; 4]>() < isize::MAX as usize);
+        slice::from_raw_parts(slots_ptr, slots_len)
     };
 
-    import_world_state(&mut wfc_state.world_initial, world_state);
+    import_slots(world, slots);
 
-    // Since we are importing a custom world state, we can not be sure all
+    // Since we are importing custom world state, we can not be sure all
     // adjacency rule constraints are initially satisfied.
-    let (world_changed, world_status) = wfc_state.world_initial.ensure_constraints();
+    let (world_changed, world_status) = world.ensure_constraints();
     if world_status == WorldStatus::Contradiction {
-        return WfcWorldStateSetResult::WorldContradictory;
+        return WfcWorldStateSlotsSetResult::WorldContradictory;
     }
 
-    // Clone eagerly so that if someone calls `wfc_world_state_get` immediately
-    // after without observing first, they get back the state that was set.
-    wfc_state.world.clone_from(&wfc_state.world_initial);
-
     if world_changed {
-        WfcWorldStateSetResult::OkNotCanonical
+        WfcWorldStateSlotsSetResult::OkNotCanonical
     } else {
-        WfcWorldStateSetResult::Ok
+        WfcWorldStateSlotsSetResult::Ok
     }
 }
 
-/// Reads world state from the provided handle into `world_state_ptr` and
-/// `world_state_len`.
+/// Reads slots from the provided handle into `slots_ptr` and `slots_len`.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
 /// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
@@ -438,33 +358,34 @@ pub unsafe extern "C" fn wfc_world_state_set(
 ///
 /// Behavior is undefined if any of the following conditions are violated:
 ///
-/// - `wfc` must be a valid handle created via `wfc_init` that returned
-///   `WfcInitResult::Ok` and *not yet* freed via `wfc_free`.
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
+///   not yet freed via [`wfc_world_state_free`],
 ///
-/// - `world_state_ptr` and `world_state_len` are used to construct a mutable slice. See
-///   `slice::from_raw_parts_mut`.
+/// - `slots_ptr` and `slots_len` are used to construct a mutable slice. See
+///   [`std::slice::from_raw_parts_mut`].
 #[no_mangle]
-pub unsafe extern "C" fn wfc_world_state_get(
-    wfc: Wfc,
-    world_state_ptr: *mut [u64; 4],
-    world_state_len: usize,
+pub unsafe extern "C" fn wfc_world_state_slots_get(
+    wfc_world_state_handle: WfcWorldStateHandle,
+    slots_ptr: *mut [u64; 4],
+    slots_len: usize,
 ) {
-    let wfc_state = {
-        assert!(!wfc.0.is_null());
-        &*wfc.0
+    let world = {
+        assert!(!wfc_world_state_handle.0.is_null());
+        &*wfc_world_state_handle.0
     };
 
-    let world_state = {
-        assert!(!world_state_ptr.is_null());
-        assert_ne!(world_state_len, 0);
-        assert!(world_state_len * mem::size_of::<[u64; 4]>() < isize::MAX as usize);
-        slice::from_raw_parts_mut(world_state_ptr, world_state_len)
+    let slots = {
+        assert!(!slots_ptr.is_null());
+        assert_ne!(slots_len, 0);
+        assert!(slots_len * mem::size_of::<[u64; 4]>() < isize::MAX as usize);
+        slice::from_raw_parts_mut(slots_ptr, slots_len)
     };
 
-    export_world_state(&wfc_state.world, world_state);
+    export_slots(world, slots);
 }
 
-fn import_world_state(world: &mut World, world_state: &[[u64; 4]]) {
+fn import_slots(world: &mut World, world_state: &[[u64; 4]]) {
     let [dim_x, dim_y, dim_z] = world.dims();
     assert_eq!(
         world_state.len(),
@@ -473,11 +394,11 @@ fn import_world_state(world: &mut World, world_state: &[[u64; 4]]) {
 
     for (i, slot_bits) in world_state.iter().enumerate() {
         let pos = wfc_core::index_to_position(world_state.len(), world.dims(), i);
-        import_slot_state(world, pos, slot_bits);
+        import_slot(world, pos, slot_bits);
     }
 }
 
-fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 4]) {
+fn import_slot(world: &mut World, pos: [u16; 3], slot_state: &[u64; 4]) {
     world.set_slot_modules(pos, false);
 
     for (blk_index, blk) in slot_state.iter().enumerate() {
@@ -492,7 +413,7 @@ fn import_slot_state(world: &mut World, pos: [u16; 3], slot_state: &[u64; 4]) {
     }
 }
 
-fn export_world_state(world: &World, world_state: &mut [[u64; 4]]) {
+fn export_slots(world: &World, world_state: &mut [[u64; 4]]) {
     let world_state_len = world_state.len();
     let [dim_x, dim_y, dim_z] = world.dims();
     assert_eq!(
@@ -502,11 +423,11 @@ fn export_world_state(world: &World, world_state: &mut [[u64; 4]]) {
 
     for (i, slot_state) in world_state.iter_mut().enumerate() {
         let pos = wfc_core::index_to_position(world_state_len, world.dims(), i);
-        export_slot_state(world, pos, slot_state);
+        export_slot(world, pos, slot_state);
     }
 }
 
-fn export_slot_state(world: &World, pos: [u16; 3], slot_state: &mut [u64; 4]) {
+fn export_slot(world: &World, pos: [u16; 3], slot_state: &mut [u64; 4]) {
     static ZERO_SLOT: &[u64; 4] = &[0; 4];
     slot_state.copy_from_slice(ZERO_SLOT);
 
