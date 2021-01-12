@@ -74,6 +74,40 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
                                              uint16_t world_z);
 
 /**
+ * Creates an instance of Wave Function Collapse world state as a copy of
+ * existing world state.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_world_state_handle_ptr` will be written to. It must be non-null and
+ *   aligned.
+ *
+ * - `source_wfc_world_state_handle` must be a valid handle created via
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
+ */
+void wfc_world_state_init_from(WfcWorldStateHandle *wfc_world_state_handle_ptr,
+                               WfcWorldStateHandle source_wfc_world_state_handle);
+
+/**
+ * Copies data between two instances of Wave Function Collapse world state.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `destination_wfc_world_state_handle` and `source_wfc_world_state_handle`
+ *   must be valid handles created via [`wfc_world_state_init`] that returned
+ *   [`WfcWorldStateInitResult::Ok`] or [`wfc_world_state_init_from`] and not
+ *   yet freed via [`wfc_world_state_free`].
+ */
+void wfc_world_state_clone_from(WfcWorldStateHandle destination_wfc_world_state_handle,
+                                WfcWorldStateHandle source_wfc_world_state_handle);
+
+/**
  * Frees an instance of Wave Function Collapse world state.
  *
  * # Safety
@@ -81,8 +115,9 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
  * Behavior is undefined if any of the following conditions are violated:
  *
  * - `wfc_world_state_handle` must be a valid handle created via
- *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
- *   not yet freed via [`wfc_world_state_free`],
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
  */
 void wfc_world_state_free(WfcWorldStateHandle wfc_world_state_handle);
 
@@ -129,8 +164,9 @@ void wfc_world_state_free(WfcWorldStateHandle wfc_world_state_handle);
  * Behavior is undefined if any of the following conditions are violated:
  *
  * - `wfc_world_state_handle` must be a valid handle created via
- *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
- *   not yet freed via [`wfc_world_state_free`],
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
  *
  * - `slots_ptr` and `slots_len` are used to construct a slice. See
  *   [`std::slice::from_raw_parts`].
@@ -167,8 +203,9 @@ WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_wo
  * Behavior is undefined if any of the following conditions are violated:
  *
  * - `wfc_world_state_handle` must be a valid handle created via
- *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
- *   not yet freed via [`wfc_world_state_free`],
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
  *
  * - `slots_ptr` and `slots_len` are used to construct a mutable slice. See
  *   [`std::slice::from_raw_parts_mut`].
@@ -222,8 +259,9 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
  * Behavior is undefined if any of the following conditions are violated:
  *
  * - `wfc_world_state_handle` must be a valid handle created via
- *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
- *   not yet freed via [`wfc_world_state_free`],
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
  *
  * - `wfc_rng_state_handle` must be a valid handle created via
  *   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].

@@ -126,6 +126,67 @@ pub unsafe extern "C" fn wfc_world_state_init(
     WfcWorldStateInitResult::Ok
 }
 
+/// Creates an instance of Wave Function Collapse world state as a copy of
+/// existing world state.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle_ptr` will be written to. It must be non-null and
+///   aligned.
+///
+/// - `source_wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
+#[no_mangle]
+pub unsafe extern "C" fn wfc_world_state_init_from(
+    wfc_world_state_handle_ptr: *mut WfcWorldStateHandle,
+    source_wfc_world_state_handle: WfcWorldStateHandle,
+) {
+    let source_world = {
+        assert!(!source_wfc_world_state_handle.0.is_null());
+        &mut *source_wfc_world_state_handle.0
+    };
+
+    let world = source_world.clone();
+
+    let world_ptr = Box::into_raw(Box::new(world));
+    let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
+
+    assert!(!wfc_world_state_handle_ptr.is_null());
+    *wfc_world_state_handle_ptr = wfc_world_state_handle;
+}
+
+/// Copies data between two instances of Wave Function Collapse world state.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `destination_wfc_world_state_handle` and `source_wfc_world_state_handle`
+///   must be valid handles created via [`wfc_world_state_init`] that returned
+///   [`WfcWorldStateInitResult::Ok`] or [`wfc_world_state_init_from`] and not
+///   yet freed via [`wfc_world_state_free`].
+#[no_mangle]
+pub unsafe extern "C" fn wfc_world_state_clone_from(
+    destination_wfc_world_state_handle: WfcWorldStateHandle,
+    source_wfc_world_state_handle: WfcWorldStateHandle,
+) {
+    let destination_world = {
+        assert!(!destination_wfc_world_state_handle.0.is_null());
+        &mut *destination_wfc_world_state_handle.0
+    };
+
+    let source_world = {
+        assert!(!source_wfc_world_state_handle.0.is_null());
+        &*source_wfc_world_state_handle.0
+    };
+
+    destination_world.clone_from(source_world);
+}
+
 /// Frees an instance of Wave Function Collapse world state.
 ///
 /// # Safety
@@ -133,8 +194,9 @@ pub unsafe extern "C" fn wfc_world_state_init(
 /// Behavior is undefined if any of the following conditions are violated:
 ///
 /// - `wfc_world_state_handle` must be a valid handle created via
-///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
-///   not yet freed via [`wfc_world_state_free`],
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
 #[no_mangle]
 pub extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldStateHandle) {
     if wfc_world_state_handle.0.is_null() {
@@ -193,8 +255,9 @@ pub enum WfcWorldStateSlotsSetResult {
 /// Behavior is undefined if any of the following conditions are violated:
 ///
 /// - `wfc_world_state_handle` must be a valid handle created via
-///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
-///   not yet freed via [`wfc_world_state_free`],
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
 ///
 /// - `slots_ptr` and `slots_len` are used to construct a slice. See
 ///   [`std::slice::from_raw_parts`].
@@ -255,8 +318,9 @@ pub unsafe extern "C" fn wfc_world_state_slots_set(
 /// Behavior is undefined if any of the following conditions are violated:
 ///
 /// - `wfc_world_state_handle` must be a valid handle created via
-///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
-///   not yet freed via [`wfc_world_state_free`],
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
 ///
 /// - `slots_ptr` and `slots_len` are used to construct a mutable slice. See
 ///   [`std::slice::from_raw_parts_mut`].
@@ -348,8 +412,9 @@ pub enum WfcObserveResult {
 /// Behavior is undefined if any of the following conditions are violated:
 ///
 /// - `wfc_world_state_handle` must be a valid handle created via
-///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] and
-///   not yet freed via [`wfc_world_state_free`],
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
 ///
 /// - `wfc_rng_state_handle` must be a valid handle created via
 ///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
