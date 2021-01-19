@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
-use crate::bitvec::TinyBitVec;
+use crate::bitvec::BitVec;
 use crate::convert::{cast_u8, cast_usize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -102,7 +102,7 @@ impl fmt::Display for WorldStatus {
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
-    slots: Vec<TinyBitVec>,
+    slots: Vec<BitVec>,
     /// Working memory of picking the nondeterministic slot with smallest
     /// entropy. Pre-allocated to maximum capacity.
     slots_with_min_entropy: Vec<usize>,
@@ -117,7 +117,7 @@ impl World {
 
         assert!(!adjacencies.is_empty());
 
-        let mut modules = TinyBitVec::zeros();
+        let mut modules = BitVec::zeros();
         let mut module_count = 0;
         let mut module_max = 0;
 
@@ -211,7 +211,7 @@ impl World {
         }
     }
 
-    pub fn slot_modules_iter<'a>(&'a self, pos: [u16; 3]) -> impl Iterator<Item = u8> + 'a {
+    pub fn slot_modules_iter(&self, pos: [u16; 3]) -> impl Iterator<Item = u8> + '_ {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &self.slots[index];
 
@@ -366,7 +366,7 @@ impl World {
                     let slot = &self.slots[s.slot_index];
                     let slot_prev = &self.slots[s.slot_index_prev];
 
-                    let mut new_slot = TinyBitVec::zeros();
+                    let mut new_slot = BitVec::zeros();
                     for adj in self
                         .adjacencies
                         .iter()
@@ -544,8 +544,10 @@ where
     R: rand_core::RngCore,
 {
     let (size_hint_low, size_hint_high) = iter.size_hint();
-    assert!(size_hint_low > 0);
-    assert_eq!(Some(size_hint_low), size_hint_high);
+
+    // Make sure whatever iterator we passed in has reasonable size hints.
+    debug_assert!(size_hint_low > 0);
+    debug_assert_eq!(Some(size_hint_low), size_hint_high);
 
     // Take 64 bits of random and possibly truncate when casting to usize on
     // non-64bit platforms.
