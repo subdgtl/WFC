@@ -1,17 +1,18 @@
 # wfc_gh
 
-A Grasshopper plugin containing the solver utilizing wfc_dylib.
+A Grasshopper plugin utilizing the solver in `wfc_core` via `wfc_dylib`.
 
 ## Developing
 
-### First time setup
+**First time setup**
 
 This requires Visual Studio 2019 and .NET Framework 4.8 SDK on the developer
 machine.
 
-Get the Framework SDK here: https://dotnet.microsoft.com/download/visual-studio-sdks?utm_source=getdotnetsdk&utm_medium=referral
+Get the Framework SDK here:
+https://dotnet.microsoft.com/download/visual-studio-sdks?utm_source=getdotnetsdk&utm_medium=referral
 
-### Building
+**Building**
 
 - Build with Visual Studio in release mode
 
@@ -20,4 +21,4 @@ Get the Framework SDK here: https://dotnet.microsoft.com/download/visual-studio-
 
 - Copy this file to a directory where Grasshopper looks for libraries
   (e.g. `AppData/Roaming/Grasshopper/Libraries`) along with `wfc.dll` dynamic
-  library.
+  library obtained by building the `wfc_dylib` project.

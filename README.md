@@ -1,20 +1,25 @@
-# wfc1
+# Wave Function Collapse
 
-A set of prototype tools for playing with Wave Function Collapse. Currently includes:
+A set of solvers, prototypes and tools to explore Wave Function Collapse. The
+solver in this repository is used by
+[Monoceros](https://github.com/subdgtl/Monoceros)
 
-- `wfc_core`: A Rust library implementing solvers for WFC, currently only a
-  solver in 3d voxel-space
+Currently includes:
 
-- `wfc_cli`: A Rust command-line app exposing `wfc_core` for 3d voxel-space
-  based on custom CSV and TXT formats
+- `wfc_core`: A Rust library implementing a WFC solver in 3d voxel space,
 
-- `wfc_dylib`: A dynamic library (`.dll`, `.so`, `.dylib`) exposing
-  functionality of `wfc_core` to use from other sorfware
+- `wfc_cli`: A Rust command-line app exposing the solver in `wfc_core`,
 
-- `wfc_gh`: A C# Grasshopper component utilizing `wfc_dylib`
+- `wfc_dylib`: A dynamic library (`.dll`, `.so`, `.dylib`) exposing the solver
+  in `wfc_core` to use from other sorfware capable of talking to C,
+
+- `wfc_gh`: A simple C# Grasshopper component utilizing `wfc_dylib` as its
+  solver (also see [Monoceros](https://github.com/subdgtl/Monoceros) for a
+  complete Grasshopper implementation).
 
 ## Developing
 
-`wfc_core`, `wfc_cli` and `wfc_dylib` are built with Rust's `cargo
-tool`. `wfc_gh` has to be built with Visual Studio, see `README.md` in `wfc_gh`
-for more.
+`wfc_core`, `wfc_cli` and `wfc_dylib` are built with Rust's Cargo tool and
+follow standard Cargo workflows. Get rust via [Rustup](https://rustup.rs/).
+
+`wfc_gh` is built with Visual Studio, see `README.md` in `wfc_gh` for more.

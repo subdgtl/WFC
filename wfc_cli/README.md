@@ -1,9 +1,9 @@
 # wfc_cli
 
-A command-line prototyping app for Wave Function Collapse. Run with `--help` to
-see options.
+A command-line prototype for exploring Wave Function Collapse. Run with `--help`
+to see options.
 
-The app has a mandatory adjacency rules CSV input file (the `<input>` positional
+The app has a mandatory rules CSV input file (the `<input>` positional
 argument), an optional initial state TXT file (the `--initial-state` argument),
 and produces an output TXT file.
 
@@ -44,16 +44,24 @@ file are "visual", in a right-handed Z-up coordinate system.
 
 - First line contains the dimensions, they must match the dimensions provided as
   commandline arguments
+
 - Second line is a mandatory newline
+
 - The rest of the file contains values for each module in the following spatial
   configuration:
+
     - Z-layers are separated by newlines and the topmost layer comes first in
       the file (RHS coords)
+
     - On each layer, there are `X * Y` values. X grows to the right, Y grows up
       (the first row of a layer had the highest Y - RHS coords)
+
     - Each value is one of:
+
         - `*`: The wildcard, allows every module to be present
+
         - `[thingy]`: A slot containing one module
+
         - `[thingy,another_thingy,stuff]`: A slot containing multiple (comma
           separated) modules
 
@@ -78,6 +86,7 @@ This file looks almost identical to the __initial state TXT file__, with two dif
 
 - It will never contain the wildcard (`*`) and instead all modules in a slot will be
   listed explicitly for easier parsing
+
 - It might contain the empty slot `[]` if WFC ended in a contradictory state
 
 If WFC found a deterministic result, each slot will contain exactly one module.
