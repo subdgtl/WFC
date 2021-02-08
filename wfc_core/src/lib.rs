@@ -111,6 +111,7 @@ pub struct World {
 
 impl World {
     pub fn new(dims: [u16; 3], adjacencies: Vec<Adjacency>) -> Self {
+        // TODO(yan): Error handling. Do not unwind across FFI.
         assert!(dims[0] > 0);
         assert!(dims[1] > 0);
         assert!(dims[2] > 0);
@@ -122,6 +123,9 @@ impl World {
         let mut module_max = 0;
 
         for adjacency in &adjacencies {
+            assert!(adjacency.module_low < bitvec::MAX_LEN);
+            assert!(adjacency.module_high < bitvec::MAX_LEN);
+
             if modules.add(adjacency.module_low) {
                 module_count += 1;
             }
@@ -553,7 +557,7 @@ where
     // non-64bit platforms.
     let rand_num = rng.next_u64() as usize;
 
-    // FIXME: @Correctness How should we correctly create the index from the
+    // TODO(yan): @Correctness How should we correctly create the index from the
     // random number to preserve the uniformity of the sampled distribution?
     let index = rand_num % size_hint_low;
     iter.nth(index).unwrap()
