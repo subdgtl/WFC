@@ -1,11 +1,11 @@
 use std::mem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TinyBitVec {
+pub struct BitVec {
     data: [u64; 4],
 }
 
-impl TinyBitVec {
+impl BitVec {
     /// Creates a new bit vector with all bits set to zero.
     pub fn zeros() -> Self {
         Self { data: [0; 4] }
@@ -79,15 +79,15 @@ impl TinyBitVec {
     }
 
     /// Creates a shared borrowed iterator over the indices of bits set to one.
-    pub fn iter(&self) -> TinyBitVecIterator {
-        TinyBitVecIterator {
+    pub fn iter(&self) -> BitVecIterator {
+        BitVecIterator {
             bitvec: self,
             next: 0,
         }
     }
 
     /// Performs a bitwise AND operation between this bit vector and other.
-    pub fn and(&mut self, other: &TinyBitVec) {
+    pub fn and(&mut self, other: &BitVec) {
         self.data[0] &= other.data[0];
         self.data[1] &= other.data[1];
         self.data[2] &= other.data[2];
@@ -95,7 +95,7 @@ impl TinyBitVec {
     }
 
     /// Performs a bitwise OR operation between this bit vector and other.
-    pub fn or(&mut self, other: &TinyBitVec) {
+    pub fn or(&mut self, other: &BitVec) {
         self.data[0] |= other.data[0];
         self.data[1] |= other.data[1];
         self.data[2] |= other.data[2];
@@ -103,7 +103,7 @@ impl TinyBitVec {
     }
 
     /// Performs a bitwise XOR operation between this bit vector and other.
-    pub fn xor(&mut self, other: &TinyBitVec) {
+    pub fn xor(&mut self, other: &BitVec) {
         self.data[0] ^= other.data[0];
         self.data[1] ^= other.data[1];
         self.data[2] ^= other.data[2];
@@ -119,12 +119,12 @@ impl TinyBitVec {
     }
 }
 
-pub struct TinyBitVecIterator<'a> {
-    bitvec: &'a TinyBitVec,
+pub struct BitVecIterator<'a> {
+    bitvec: &'a BitVec,
     next: u16,
 }
 
-impl<'a> Iterator for TinyBitVecIterator<'a> {
+impl<'a> Iterator for BitVecIterator<'a> {
     type Item = u8;
 
     fn next(&mut self) -> Option<u8> {
@@ -143,13 +143,19 @@ impl<'a> Iterator for TinyBitVecIterator<'a> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // Create masks for the already spent bits.
-        let m0 = u64::MAX << self.next.max(64);
-        let m1 = u64::MAX << self.next.saturating_sub(64).max(64);
-        let m2 = u64::MAX << self.next.saturating_sub(64 * 2).max(64);
-        let m3 = u64::MAX << self.next.saturating_sub(64 * 3).max(64);
+        // Size hints are computed using the count_ones intrinsic on the u64
+        // components of the bit vector. To not count bits we already iterated
+        // over, we mask them. Masks are computed from the the index to the bit
+        // we would visit next.
 
-        // Mask out the spent bits and count how many ones remain.
+        let n = u32::from(self.next);
+
+        let m0 = u64::MAX.checked_shl(n).unwrap_or(0);
+        let m1 = u64::MAX.checked_shl(n.saturating_sub(64)).unwrap_or(0);
+        let m2 = u64::MAX.checked_shl(n.saturating_sub(64 * 2)).unwrap_or(0);
+        let m3 = u64::MAX.checked_shl(n.saturating_sub(64 * 3)).unwrap_or(0);
+
+        // Mask out spent bits and count how many set bits remain.
 
         // usize is defined to be at least 16 bits wide, the following `as`
         // casts should be ok for up to 2^16 ones in the whole array.
@@ -164,12 +170,12 @@ impl<'a> Iterator for TinyBitVecIterator<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a TinyBitVec {
+impl<'a> IntoIterator for &'a BitVec {
     type Item = u8;
-    type IntoIter = TinyBitVecIterator<'a>;
+    type IntoIter = BitVecIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        TinyBitVecIterator {
+        BitVecIterator {
             bitvec: self,
             next: 0,
         }
