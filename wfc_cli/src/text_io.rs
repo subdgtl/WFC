@@ -301,7 +301,7 @@ pub fn import_world_state<R: io::BufRead>(
     Ok(())
 }
 
-// FIXME: Error handling for writing
+// TODO(yan): Error handling for writing
 pub fn export_world_state<W: io::Write>(
     w: &mut W,
     world: &World,
@@ -313,7 +313,7 @@ pub fn export_world_state<W: io::Write>(
     assert!(dims[1] > 0);
     assert!(dims[2] > 0);
 
-    // FIXME: Formatting for multichar names
+    // TODO(yan): Formatting for multichar names
     let largest_slot = {
         let mut largest = 0;
 
