@@ -8,8 +8,8 @@ pub struct BitVec {
     /// The data and length of the bit vector.
     ///
     /// The last eight bits represent the length and the first 248 bits contain
-    /// the data itself. While the length could be be computed every time with
-    /// [`u64::count_ones`], the intrinsic showed up on in profiling quite a lot
+    /// the data itself. While the length could be computed every time with
+    /// [`u64::count_ones`], the intrinsic showed up in profiling quite a lot
     /// and it is just faster to use the cached value.
     data: [u64; 4],
 }
