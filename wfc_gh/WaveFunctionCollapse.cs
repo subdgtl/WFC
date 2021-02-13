@@ -130,9 +130,10 @@ namespace wfc_gh
                 return;
             }
 
-            // We need to check ahead of time, if there are at most 256 modules
-            // altogether in the input, otherwise the `nextModule` variable will
-            // overflow and cause a dictionary error.
+            // We need to check ahead of time, if there are at most
+            // maxModuleCount modules altogether in the input, otherwise
+            // nextModule will overflow and cause a dictionary error.
+            uint maxModuleCount = Native.wfc_max_module_count_get();
             {
                 HashSet<string> allModules = new HashSet<string>();
 
@@ -142,10 +143,10 @@ namespace wfc_gh
                     allModules.Add(adjacencyRulesModuleHigh[i]);
                 }
 
-                if (allModules.Count > 256)
+                if (allModules.Count > maxModuleCount)
                 {
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                      "Too many modules. Maximum allowed is 256");
+                                      "Too many modules. Maximum allowed is " + maxModuleCount);
                     return;
                 }
             }
@@ -192,6 +193,7 @@ namespace wfc_gh
                     nameToModule.Add(lowStr, low);
                     moduleToName.Add(low, lowStr);
                     nextModule++;
+                    Debug.Assert(nextModule < maxModuleCount);
                 }
 
                 byte high = 0;
@@ -205,6 +207,7 @@ namespace wfc_gh
                     nameToModule.Add(highStr, high);
                     moduleToName.Add(high, highStr);
                     nextModule++;
+                    Debug.Assert(nextModule < maxModuleCount);
                 }
 
                 AdjacencyRule rule;
@@ -255,8 +258,10 @@ namespace wfc_gh
             // -- World slot positions and modules --
             //
 
-            // This array is re-used for both input and output (if input world state was provided).
-            // This is ok, because wfc_world_state_get does clear it to zero before writing to it.
+            // This array is re-used for both input and output (if input world
+            // state was provided). This is ok, because
+            // wfc_world_state_slots_get does clear it to zero before writing to
+            // it.
             var slots = new SlotState[worldDimensions];
 
             // ... WE do need to clear it to zero, however. C# does not initialize slot_state for us!
@@ -318,12 +323,11 @@ namespace wfc_gh
 
                     byte blkIndex = (byte)(module / 64u);
                     byte bitIndex = (byte)(module % 64u);
-                    ulong mask = 1ul << bitIndex;
 
                     Debug.Assert(blkIndex < 4);
                     unsafe
                     {
-                        slots[slotIndex].slot_state[blkIndex] |= mask;
+                        slots[slotIndex].slot_state[blkIndex] |= 1ul << bitIndex;
                     }
                 }
                 else
@@ -337,9 +341,10 @@ namespace wfc_gh
             //
             // -- Random seed --
             //
-            // wfc_init needs 128 bits worth of random seed, but that is tricky to provide from GH.
-            // We let GH provide an int, use it to seed a C# Random, get 16 bytes of data from that
-            // and copy those into two u64's.
+            // wfc_rng_state_init needs 128 bits worth of random seed, but that
+            // is tricky to provide from GH.  We let GH provide an int, use it
+            // to seed a C# Random, get 16 bytes of data from that and copy
+            // those into two u64's.
 
             int randomSeed = 0;
             DA.GetData(IN_PARAM_RANDOM_SEED, ref randomSeed);
@@ -486,16 +491,18 @@ namespace wfc_gh
             worldSlotModules.Clear();
             for (var i = 0; i < slots.Length; ++i)
             {
-                // Assume the result is deterministic and only take the first set bit
+                // Because WFC finished successfully, we assume the result is
+                // deterministic and only take the first set bit. short.MinValue
+                // is used as a sentinel for uninitialized and we later assert
+                // it has been set.
                 short module = short.MinValue;
                 for (int blkIndex = 0; blkIndex < 4 && module == short.MinValue; ++blkIndex)
                 {
                     for (int bitIndex = 0; bitIndex < 64 && module == short.MinValue; ++bitIndex)
                     {
-                        ulong mask = 1ul << bitIndex;
                         unsafe
                         {
-                            if ((slots[i].slot_state[blkIndex] & mask) != 0)
+                            if ((slots[i].slot_state[blkIndex] & (1ul << bitIndex)) != 0)
                             {
                                 module = (short)(64 * blkIndex + bitIndex);
                             }
@@ -504,11 +511,10 @@ namespace wfc_gh
                 }
 
                 string moduleStr = "<unknown>";
-                if (module >= 0)
-                {
-                    Debug.Assert(module <= byte.MaxValue);
-                    moduleToName.TryGetValue((byte)module, out moduleStr);
-                }
+                Debug.Assert(module >= 0);
+                Debug.Assert(module <= byte.MaxValue);
+                Debug.Assert(module < maxModuleCount);
+                moduleToName.TryGetValue((byte)module, out moduleStr);
 
                 long slotX = i % worldSlotsPerLayer % worldSlotsPerRow;
                 long slotY = i % worldSlotsPerLayer / worldSlotsPerRow;
@@ -617,6 +623,9 @@ namespace wfc_gh
 
     internal class Native
     {
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_max_module_count_get();
+
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern WfcWorldStateInitResult wfc_world_state_init(IntPtr* wfc_world_state_handle_ptr,
                                                                                    AdjacencyRule* adjacency_rules_ptr,

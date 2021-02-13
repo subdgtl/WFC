@@ -14,9 +14,8 @@ use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
 
 use crate::convert::{cast_u8, cast_usize};
 
-/// Maximum number of modules supported to be sent with
-/// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`].
-const MAX_MODULE_COUNT: usize = mem::size_of::<[u64; 4]>() * 8;
+// Note: Volatile! It has to be the same as bitvec::MAX_LEN.
+const MAX_MODULE_COUNT: u32 = 256 - 8;
 
 #[repr(u32)]
 #[derive(Clone, Copy)]
@@ -71,6 +70,14 @@ pub enum WfcWorldStateInitResult {
     ErrWorldDimensionsZero = 2,
 }
 
+/// Returns the maximum module count supported to be sent with
+/// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
+/// implementation.
+#[no_mangle]
+pub extern "C" fn wfc_max_module_count_get() -> u32 {
+    MAX_MODULE_COUNT
+}
+
 /// Creates an instance of Wave Function Collapse world state and initializes it
 /// with adjacency rules. The world gets initialized with every module possible
 /// in every slot.
@@ -107,16 +114,21 @@ pub unsafe extern "C" fn wfc_world_state_init(
         return WfcWorldStateInitResult::ErrWorldDimensionsZero;
     }
 
+    for rule in adjacency_rules {
+        let module_low = u32::from(rule.module_low);
+        let module_high = u32::from(rule.module_high);
+
+        if  module_low >= MAX_MODULE_COUNT || module_high >= MAX_MODULE_COUNT {
+            return WfcWorldStateInitResult::ErrTooManyModules;
+        }
+    }
+
     let adjacencies = adjacency_rules
         .iter()
         .map(|adjacency_rule| (*adjacency_rule).into())
         .collect();
+
     let world = World::new([world_x, world_y, world_z], adjacencies);
-
-    if world.module_count() > MAX_MODULE_COUNT {
-        return WfcWorldStateInitResult::ErrTooManyModules;
-    }
-
     let world_ptr = Box::into_raw(Box::new(world));
     let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
 

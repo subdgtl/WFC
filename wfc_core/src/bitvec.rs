@@ -1,27 +1,29 @@
-use std::mem;
+pub const MAX_LEN: u8 = u8::MAX - 8;
+pub const MAX_LEN_U64: u64 = MAX_LEN as u64;
+
+const DATA_MASK: u64 = u64::MAX >> 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BitVec {
+    /// The data and length of the bit vector.
+    ///
+    /// The last eight bits represent the length and the first 248 bits contain
+    /// the data itself. While the length could be computed every time with
+    /// [`u64::count_ones`], the intrinsic showed up in profiling quite a lot
+    /// and it is just faster to use the cached value.
     data: [u64; 4],
 }
 
 impl BitVec {
     /// Creates a new bit vector with all bits set to zero.
-    pub fn zeros() -> Self {
+    pub const fn zeros() -> Self {
         Self { data: [0; 4] }
-    }
-
-    /// Creates a new bit vector with all bits set to one.
-    pub fn ones() -> Self {
-        Self {
-            data: [u64::MAX; 4],
-        }
     }
 
     /// Returns whether the bit vector has a bit set.
     pub fn contains(&self, index: u8) -> bool {
+        assert!(index < MAX_LEN);
         let index = usize::from(index);
-        debug_assert!(index < mem::size_of::<[u64; 4]>() * 8);
 
         let blk_index = index / 64;
         let bit_index = index % 64;
@@ -33,8 +35,8 @@ impl BitVec {
     /// Sets a bit in the vector to one. Returns `true` if the bit was not
     /// previously set.
     pub fn add(&mut self, index: u8) -> bool {
+        assert!(index < MAX_LEN);
         let index = usize::from(index);
-        debug_assert!(index < mem::size_of::<[u64; 4]>() * 8);
 
         let blk_index = index / 64;
         let bit_index = index % 64;
@@ -42,14 +44,19 @@ impl BitVec {
 
         self.data[blk_index] |= 1 << bit_index;
 
-        value == 0
+        if value == 0 {
+            self.inc_len();
+            true
+        } else {
+            false
+        }
     }
 
     /// Sets a bit in the vector to zero. Returns `true` if the bit was
     /// previously set.
     pub fn remove(&mut self, index: u8) -> bool {
+        assert!(index < MAX_LEN);
         let index = usize::from(index);
-        debug_assert!(index < mem::size_of::<[u64; 4]>() * 8);
 
         let blk_index = index / 64;
         let bit_index = index % 64;
@@ -57,20 +64,18 @@ impl BitVec {
 
         self.data[blk_index] &= !(1 << bit_index);
 
-        value != 0
+        if value != 0 {
+            self.dec_len();
+            true
+        } else {
+            false
+        }
     }
 
     /// Returns the number of ones in the binary representation of the bit
     /// vector.
     pub fn len(&self) -> usize {
-        // usize is defined to be at least 16 bits wide, the following `as`
-        // casts should be ok for up to 2^16 ones in the whole array.
-        let c0 = self.data[0].count_ones() as usize;
-        let c1 = self.data[1].count_ones() as usize;
-        let c2 = self.data[2].count_ones() as usize;
-        let c3 = self.data[3].count_ones() as usize;
-
-        c0 + c1 + c2 + c3
+        (self.data[3] >> 56) as usize
     }
 
     /// Sets all bits in the bit vector to zero.
@@ -86,50 +91,36 @@ impl BitVec {
         }
     }
 
-    /// Performs a bitwise AND operation between this bit vector and other.
-    pub fn and(&mut self, other: &BitVec) {
-        self.data[0] &= other.data[0];
-        self.data[1] &= other.data[1];
-        self.data[2] &= other.data[2];
-        self.data[3] &= other.data[3];
+    fn inc_len(&mut self) {
+        let mut len = self.data[3] >> 56;
+        assert!(len < MAX_LEN_U64);
+
+        len += 1;
+
+        self.data[3] = (self.data[3] & DATA_MASK) | (len << 56);
     }
 
-    /// Performs a bitwise OR operation between this bit vector and other.
-    pub fn or(&mut self, other: &BitVec) {
-        self.data[0] |= other.data[0];
-        self.data[1] |= other.data[1];
-        self.data[2] |= other.data[2];
-        self.data[3] |= other.data[3];
-    }
+    fn dec_len(&mut self) {
+        let mut len = self.data[3] >> 56;
+        assert!(len > 0);
 
-    /// Performs a bitwise XOR operation between this bit vector and other.
-    pub fn xor(&mut self, other: &BitVec) {
-        self.data[0] ^= other.data[0];
-        self.data[1] ^= other.data[1];
-        self.data[2] ^= other.data[2];
-        self.data[3] ^= other.data[3];
-    }
+        len -= 1;
 
-    /// Performs a bitwise negation on this bit vector.
-    pub fn not(&mut self) {
-        self.data[0] &= !self.data[0];
-        self.data[1] &= !self.data[1];
-        self.data[2] &= !self.data[2];
-        self.data[3] &= !self.data[3];
+        self.data[3] = (self.data[3] & DATA_MASK) | (len << 56)
     }
 }
 
 pub struct BitVecIterator<'a> {
     bitvec: &'a BitVec,
-    next: u16,
+    next: u8,
 }
 
 impl<'a> Iterator for BitVecIterator<'a> {
     type Item = u8;
 
     fn next(&mut self) -> Option<u8> {
-        while self.next <= u16::from(u8::MAX) {
-            let index = self.next as u8;
+        while self.next < MAX_LEN {
+            let index = self.next;
 
             let contains = self.bitvec.contains(index);
             self.next += 1;
@@ -150,10 +141,15 @@ impl<'a> Iterator for BitVecIterator<'a> {
 
         let n = u32::from(self.next);
 
-        let m0 = u64::MAX.checked_shl(n).unwrap_or(0);
-        let m1 = u64::MAX.checked_shl(n.saturating_sub(64)).unwrap_or(0);
-        let m2 = u64::MAX.checked_shl(n.saturating_sub(64 * 2)).unwrap_or(0);
-        let m3 = u64::MAX.checked_shl(n.saturating_sub(64 * 3)).unwrap_or(0);
+        let shl0 = n;
+        let shl1 = n.saturating_sub(64);
+        let shl2 = n.saturating_sub(64 * 2);
+        let shl3 = n.saturating_sub(64 * 3);
+
+        let m0 = u64::MAX.checked_shl(shl0).unwrap_or(0);
+        let m1 = u64::MAX.checked_shl(shl1).unwrap_or(0);
+        let m2 = u64::MAX.checked_shl(shl2).unwrap_or(0);
+        let m3 = u64::MAX.checked_shl(shl3).unwrap_or(0) & DATA_MASK;
 
         // Mask out spent bits and count how many set bits remain.
 

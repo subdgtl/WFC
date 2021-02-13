@@ -49,6 +49,13 @@ typedef struct AdjacencyRule {
 typedef Pcg32 *WfcRngStateHandle;
 
 /**
+ * Returns the maximum module count supported to be sent with
+ * [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
+ * implementation.
+ */
+uint32_t wfc_max_module_count_get(void);
+
+/**
  * Creates an instance of Wave Function Collapse world state and initializes it
  * with adjacency rules. The world gets initialized with every module possible
  * in every slot.

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- FIXME: We would like to target netstandard2.1, but GH uses
+    <!-- TODO(yan): We would like to target netstandard2.1, but GH uses
     System.Drawing from .NET Framework, so we have to use netXY -->
     <!--<TargetFramework>netstandard2.1</TargetFramework>-->
     <TargetFramework>net48</TargetFramework>

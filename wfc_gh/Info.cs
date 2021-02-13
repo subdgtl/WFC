@@ -18,7 +18,7 @@ namespace wfc_gh
 
         public override Guid Id => new Guid("1277e762-d959-464b-a68c-b4881d99b969");
         public override string Name => "WFC Solver";
-        // FIXME: Use another icon here?
+        // TODO(yan): Use another icon here?
         public override System.Drawing.Bitmap Icon => componentIcon;
         public override string Description => "Wave Function Collapse solver(s)";
         public override string AuthorName => "Subdigital";
