@@ -9,7 +9,7 @@ use std::convert::TryFrom;
 use std::fmt;
 
 use crate::bitvec::BitVec;
-use crate::convert::{cast_u8, cast_usize};
+use crate::convert::cast_u8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -107,6 +107,7 @@ pub struct World {
     /// entropy. Pre-allocated to maximum capacity.
     slots_with_min_entropy: Vec<usize>,
     module_count: usize,
+    module_weights: Vec<f32>,
 }
 
 impl World {
@@ -119,8 +120,8 @@ impl World {
         assert!(!adjacencies.is_empty());
 
         let mut modules = BitVec::zeros();
-        let mut module_count = 0;
-        let mut module_max = 0;
+        let mut module_count: u16 = 0;
+        let mut module_max: u8 = 0;
 
         for adjacency in &adjacencies {
             assert!(adjacency.module_low < bitvec::MAX_LEN);
@@ -145,23 +146,20 @@ impl World {
         // correctly. The importer should intern names to sequentially
         // allocated numbers, starting at 0
         assert!(
-            module_count == module_max + 1,
+            module_count == u16::from(module_max) + 1,
             "No gaps in module indices allowed",
         );
 
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
-        let mut slots = Vec::with_capacity(slot_count);
-
-        for _ in 0..slot_count {
-            slots.push(modules);
-        }
+        let slots = vec![modules; slot_count];
 
         Self {
             dims,
             adjacencies,
             slots,
             slots_with_min_entropy: Vec::with_capacity(slot_count),
-            module_count: cast_usize(module_count),
+            module_count: usize::from(module_count),
+            module_weights: vec![1.0; usize::from(module_count)],
         }
     }
 
@@ -267,38 +265,53 @@ impl World {
     }
 
     pub fn observe<R: rand_core::RngCore>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
-        let mut min_entropy = usize::MAX;
+        let mut min_entropy = f32::INFINITY;
         self.slots_with_min_entropy.clear();
 
         for (i, slot) in self.slots.iter().enumerate() {
-            let entropy = slot.len();
-            // We can collapse anything with entropy >= 2. If entropy == 1, the
-            // slot is already collapsed. If entropy is 0, we hit a
+            // We can collapse anything with slot_len >= 2. If slot_len == 1,
+            // the slot is already collapsed. If slot_len == 0, we hit a
             // contradiction and can bail out early.
-            if entropy == 0 {
+            let slot_len = slot.len();
+            if slot_len == 0 {
                 return (false, WorldStatus::Contradiction);
             }
+            if slot_len == 1 {
+                continue;
+            }
 
-            if entropy >= 2 {
-                match entropy.cmp(&min_entropy) {
-                    Ordering::Less => {
-                        min_entropy = entropy;
-                        self.slots_with_min_entropy.clear();
-                        self.slots_with_min_entropy.push(i);
-                    }
-                    Ordering::Equal => {
-                        self.slots_with_min_entropy.push(i);
-                    }
-                    Ordering::Greater => (),
+            let mut sum_weights = 0.0;
+            let mut sum_weight_log_weights = 0.0;
+            for module in slot {
+                let weight = self.module_weights[usize::from(module)];
+                sum_weights += weight;
+                sum_weight_log_weights += weight * weight.ln();
+            }
+
+            debug_assert!(sum_weights >= 0.0);
+
+            let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
+            debug_assert!(!entropy.is_nan());
+
+            match entropy.partial_cmp(&min_entropy) {
+                Some(Ordering::Less) => {
+                    min_entropy = entropy;
+                    self.slots_with_min_entropy.clear();
+                    self.slots_with_min_entropy.push(i);
                 }
+                Some(Ordering::Equal) => {
+                    self.slots_with_min_entropy.push(i);
+                }
+                Some(Ordering::Greater) => (),
+                None => (),
             }
         }
 
         if self.slots_with_min_entropy.is_empty() {
             (false, WorldStatus::Deterministic)
         } else {
-            let iter = self.slots_with_min_entropy.iter().copied();
-            let min_entropy_slot_index = choose_random(iter, rng);
+            let min_entropy_slot_index =
+                choose_random(self.slots_with_min_entropy.iter().copied(), rng);
             let min_entropy_slot = &mut self.slots[min_entropy_slot_index];
 
             // Pick a random module to materialize and remove other

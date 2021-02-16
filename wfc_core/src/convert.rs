@@ -13,16 +13,3 @@ where
 {
     n.try_into().expect("Expected N to fit in u8")
 }
-
-/// Convert `n` to `usize` using `TryFrom` or panic.
-///
-/// # Panics
-///
-/// Panics if the conversion returns an error.
-pub fn cast_usize<T>(n: T) -> usize
-where
-    T: TryInto<usize>,
-    <T as TryInto<usize>>::Error: Debug,
-{
-    n.try_into().expect("Expected N to fit in usize")
-}
