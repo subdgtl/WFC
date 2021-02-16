@@ -130,9 +130,8 @@ namespace wfc_gh
                 return;
             }
 
-            // We need to check ahead of time, if there are at most
-            // maxModuleCount modules altogether in the input, otherwise
-            // nextModule will overflow and cause a dictionary error.
+            // Check ahead of time, if there are at most maxModuleCount modules
+            // altogether in the input.
             uint maxModuleCount = Native.wfc_max_module_count_get();
             {
                 HashSet<string> allModules = new HashSet<string>();
@@ -264,7 +263,8 @@ namespace wfc_gh
             // it.
             var slots = new SlotState[worldDimensions];
 
-            // ... WE do need to clear it to zero, however. C# does not initialize slot_state for us!
+            // ... WE do need to clear it to zero, however. C# does not
+            // initialize slot_state for us!
             for (var i = 0; i < slots.Length; ++i)
             {
                 unsafe
@@ -441,7 +441,7 @@ namespace wfc_gh
                 Native.wfc_world_state_init_from(&wfcWorldStateHandleBackup, wfcWorldStateHandle);
             }
 
-            var foundDeterministic = false;
+            bool foundDeterministic = false;
             uint attempts = 0;
 
             while (!foundDeterministic && attempts < maxAttempts)
