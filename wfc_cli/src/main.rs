@@ -109,7 +109,7 @@ fn main() {
             }
         };
 
-        let mut world = World::new(dims, import_result.adjacencies);
+        let mut world = World::new(dims, import_result.adjacencies, false);
 
         let buf_reader = BufReader::new(world_state_file);
         if let Err(err) =
@@ -139,7 +139,7 @@ fn main() {
 
         world
     } else {
-        World::new(dims, import_result.adjacencies)
+        World::new(dims, import_result.adjacencies, false)
     };
 
     let mut world = initial_world.clone();
