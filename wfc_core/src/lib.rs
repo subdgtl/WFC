@@ -8,8 +8,13 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
+use fxhash::FxBuildHasher;
+use lru::LruCache;
+
 use crate::bitvec::BitVec;
-use crate::convert::{cast_u8, cast_usize};
+use crate::convert::cast_u8;
+
+const LRU_SIZE: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -98,19 +103,24 @@ impl fmt::Display for WorldStatus {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
+    use_shannon_entropy: bool,
+
     slots: Vec<BitVec>,
-    /// Working memory of picking the nondeterministic slot with smallest
-    /// entropy. Pre-allocated to maximum capacity.
-    slots_with_min_entropy: Vec<usize>,
     module_count: usize,
+    module_weights: Vec<f32>,
+
+    /// Working memory for picking the nondeterministic slot with smallest
+    /// entropy. Pre-allocated to maximum capacity.
+    min_entropy_slots: Vec<usize>,
+    /// Working memory for computed slot entropies.
+    slot_entropy_lru: LruCache<BitVec, f32, FxBuildHasher>,
 }
 
 impl World {
-    pub fn new(dims: [u16; 3], adjacencies: Vec<Adjacency>) -> Self {
+    pub fn new(dims: [u16; 3], adjacencies: Vec<Adjacency>, use_shannon_entropy: bool) -> Self {
         // TODO(yan): Error handling. Do not unwind across FFI.
         assert!(dims[0] > 0);
         assert!(dims[1] > 0);
@@ -119,8 +129,8 @@ impl World {
         assert!(!adjacencies.is_empty());
 
         let mut modules = BitVec::zeros();
-        let mut module_count = 0;
-        let mut module_max = 0;
+        let mut module_count: usize = 0;
+        let mut module_max: u8 = 0;
 
         for adjacency in &adjacencies {
             assert!(adjacency.module_low < bitvec::MAX_LEN);
@@ -145,23 +155,30 @@ impl World {
         // correctly. The importer should intern names to sequentially
         // allocated numbers, starting at 0
         assert!(
-            module_count == module_max + 1,
+            module_count == usize::from(module_max) + 1,
             "No gaps in module indices allowed",
         );
 
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
-        let mut slots = Vec::with_capacity(slot_count);
+        let slots = vec![modules; slot_count];
 
-        for _ in 0..slot_count {
-            slots.push(modules);
+        let mut module_weights = vec![0.0; module_count];
+        for adjacency in &adjacencies {
+            module_weights[usize::from(adjacency.module_low)] += 1.0;
+            module_weights[usize::from(adjacency.module_high)] += 1.0;
         }
 
         Self {
             dims,
             adjacencies,
+            use_shannon_entropy,
+
             slots,
-            slots_with_min_entropy: Vec::with_capacity(slot_count),
-            module_count: cast_usize(module_count),
+            module_count,
+            module_weights,
+
+            min_entropy_slots: Vec::with_capacity(slot_count),
+            slot_entropy_lru: LruCache::with_hasher(LRU_SIZE, FxBuildHasher::default()),
         }
     }
 
@@ -267,38 +284,64 @@ impl World {
     }
 
     pub fn observe<R: rand_core::RngCore>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
-        let mut min_entropy = usize::MAX;
-        self.slots_with_min_entropy.clear();
+        let mut min_entropy = f32::INFINITY;
+        self.min_entropy_slots.clear();
 
         for (i, slot) in self.slots.iter().enumerate() {
-            let entropy = slot.len();
-            // We can collapse anything with entropy >= 2. If entropy == 1, the
-            // slot is already collapsed. If entropy is 0, we hit a
+            // We can collapse anything with slot_len >= 2. If slot_len == 1,
+            // the slot is already collapsed. If slot_len == 0, we hit a
             // contradiction and can bail out early.
-            if entropy == 0 {
+            let slot_len = slot.len();
+            if slot_len == 0 {
                 return (false, WorldStatus::Contradiction);
             }
+            if slot_len == 1 {
+                continue;
+            }
 
-            if entropy >= 2 {
-                match entropy.cmp(&min_entropy) {
-                    Ordering::Less => {
-                        min_entropy = entropy;
-                        self.slots_with_min_entropy.clear();
-                        self.slots_with_min_entropy.push(i);
+            let entropy = if self.use_shannon_entropy {
+                if let Some(entropy) = self.slot_entropy_lru.get(slot) {
+                    *entropy
+                } else {
+                    let mut sum_weights = 0.0;
+                    let mut sum_weight_log_weights = 0.0;
+                    for module in slot {
+                        let weight = self.module_weights[usize::from(module)];
+                        sum_weights += weight;
+                        sum_weight_log_weights += weight * weight.ln();
                     }
-                    Ordering::Equal => {
-                        self.slots_with_min_entropy.push(i);
-                    }
-                    Ordering::Greater => (),
+
+                    debug_assert!(sum_weights >= 0.0);
+
+                    let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
+                    debug_assert!(!entropy.is_nan());
+
+                    self.slot_entropy_lru.put(*slot, entropy);
+
+                    entropy
                 }
+            } else {
+                slot_len as f32
+            };
+
+            match entropy.partial_cmp(&min_entropy) {
+                Some(Ordering::Less) => {
+                    min_entropy = entropy;
+                    self.min_entropy_slots.clear();
+                    self.min_entropy_slots.push(i);
+                }
+                Some(Ordering::Equal) => {
+                    self.min_entropy_slots.push(i);
+                }
+                Some(Ordering::Greater) => (),
+                None => (),
             }
         }
 
-        if self.slots_with_min_entropy.is_empty() {
+        if self.min_entropy_slots.is_empty() {
             (false, WorldStatus::Deterministic)
         } else {
-            let iter = self.slots_with_min_entropy.iter().copied();
-            let min_entropy_slot_index = choose_random(iter, rng);
+            let min_entropy_slot_index = choose_random(self.min_entropy_slots.iter().copied(), rng);
             let min_entropy_slot = &mut self.slots[min_entropy_slot_index];
 
             // Pick a random module to materialize and remove other
@@ -344,7 +387,7 @@ impl World {
         let slots_len = self.slots.len();
         let [dim_x, dim_y, dim_z] = self.dims;
 
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::with_hasher(FxBuildHasher::default());
         visited.insert(slot_index);
 
         let mut stack = vec![StackEntry {
@@ -539,6 +582,24 @@ impl World {
         }
 
         (changed, contradiction)
+    }
+}
+
+/// Manual [`Clone`] impl, because [`LruCache`] does not impl [`Clone`].
+impl Clone for World {
+    fn clone(&self) -> Self {
+        Self {
+            dims: self.dims,
+            adjacencies: self.adjacencies.clone(),
+            use_shannon_entropy: self.use_shannon_entropy,
+
+            slots: self.slots.clone(),
+            module_count: self.module_count,
+            module_weights: self.module_weights.clone(),
+
+            min_entropy_slots: Vec::with_capacity(self.min_entropy_slots.len()),
+            slot_entropy_lru: LruCache::with_hasher(LRU_SIZE, FxBuildHasher::default()),
+        }
     }
 }
 
