@@ -18,7 +18,7 @@ use crate::convert::{cast_u8, cast_usize};
 const MAX_MODULE_COUNT: u32 = 256 - 8;
 
 #[repr(u32)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyRuleKind {
     X = 0,
     Y = 1,
@@ -36,7 +36,7 @@ impl Into<AdjacencyKind> for AdjacencyRuleKind {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AdjacencyRule {
     pub kind: AdjacencyRuleKind,
     pub module_low: u8,
@@ -51,6 +51,13 @@ impl Into<Adjacency> for AdjacencyRule {
             module_high: self.module_high,
         }
     }
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Entropy {
+    Linear = 0,
+    Shannon = 1,
 }
 
 /// An opaque handle to the Wave Function Collapse world state. Actually a
@@ -102,6 +109,7 @@ pub unsafe extern "C" fn wfc_world_state_init(
     world_x: u16,
     world_y: u16,
     world_z: u16,
+    entropy: Entropy,
 ) -> WfcWorldStateInitResult {
     let adjacency_rules = {
         assert!(!adjacency_rules_ptr.is_null());
@@ -128,7 +136,7 @@ pub unsafe extern "C" fn wfc_world_state_init(
         .map(|adjacency_rule| (*adjacency_rule).into())
         .collect();
 
-    let world = World::new([world_x, world_y, world_z], adjacencies, false);
+    let world = World::new([world_x, world_y, world_z], adjacencies, entropy == Entropy::Shannon);
     let world_ptr = Box::into_raw(Box::new(world));
     let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
 
