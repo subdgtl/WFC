@@ -129,7 +129,7 @@ impl World {
         assert!(!adjacencies.is_empty());
 
         let mut modules = BitVec::zeros();
-        let mut module_count: u16 = 0;
+        let mut module_count: usize = 0;
         let mut module_max: u8 = 0;
 
         for adjacency in &adjacencies {
@@ -155,12 +155,18 @@ impl World {
         // correctly. The importer should intern names to sequentially
         // allocated numbers, starting at 0
         assert!(
-            module_count == u16::from(module_max) + 1,
+            module_count == usize::from(module_max) + 1,
             "No gaps in module indices allowed",
         );
 
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
         let slots = vec![modules; slot_count];
+
+        let mut module_weights = vec![0.0; module_count];
+        for adjacency in &adjacencies {
+            module_weights[usize::from(adjacency.module_low)] += 1.0;
+            module_weights[usize::from(adjacency.module_high)] += 1.0;
+        }
 
         Self {
             dims,
@@ -168,8 +174,8 @@ impl World {
             use_shannon_entropy,
 
             slots,
-            module_count: usize::from(module_count),
-            module_weights: vec![1.0; usize::from(module_count)],
+            module_count,
+            module_weights,
 
             min_entropy_slots: Vec::with_capacity(slot_count),
             slot_entropy_lru: LruCache::new(LRU_SIZE),
