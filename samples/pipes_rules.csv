@@ -1,0 +1,64 @@
+# axis,low,high
+
+# "-" module with itself
+x,pipe_x,pipe_x
+y,pipe_x,pipe_x
+z,pipe_x,pipe_x
+
+# "/" module with itself
+x,pipe_y,pipe_y
+y,pipe_y,pipe_y
+z,pipe_y,pipe_y
+
+# "|" module with itself
+x,pipe_z,pipe_z
+y,pipe_z,pipe_z
+z,pipe_z,pipe_z
+
+# "-" and "|" in the axis they don't connect in
+y,pipe_x,pipe_z
+y,pipe_z,pipe_x
+
+# "/" and "|" in the axis they don't connect in
+x,pipe_y,pipe_z
+x,pipe_z,pipe_y
+
+# "-" and "/" in the axis they don't connect in
+z,pipe_x,pipe_y
+z,pipe_y,pipe_x
+
+# The crossroad module with itself
+x,cross,cross
+y,cross,cross
+z,cross,cross
+
+# The crossroad module with "-", "/", and "|" in their respectivve axes
+x,pipe_x,cross
+x,cross,pipe_x
+y,pipe_y,cross
+y,cross,pipe_y
+z,pipe_z,cross
+z,cross,pipe_z
+
+# The empty module with itself
+x,empty,empty
+y,empty,empty
+z,empty,empty
+
+# The empty module with "/" and "|" on the X axis
+x,pipe_y,empty
+x,empty,pipe_y
+x,pipe_z,empty
+x,empty,pipe_z
+
+# The empty module with "-" and "|" on the Y axis
+y,pipe_x,empty
+y,empty,pipe_x
+y,pipe_z,empty
+y,empty,pipe_z
+
+# The empty module with "-" and "/" on the Z axis
+z,pipe_x,empty
+z,empty,pipe_x
+z,pipe_y,empty
+z,empty,pipe_y
