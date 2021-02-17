@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
+use fxhash::FxBuildHasher;
 use lru::LruCache;
 
 use crate::bitvec::BitVec;
@@ -102,7 +103,6 @@ impl fmt::Display for WorldStatus {
     }
 }
 
-#[derive(Debug)]
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
@@ -116,7 +116,7 @@ pub struct World {
     /// entropy. Pre-allocated to maximum capacity.
     min_entropy_slots: Vec<usize>,
     /// Working memory for computed slot entropies.
-    slot_entropy_lru: LruCache<BitVec, f32>,
+    slot_entropy_lru: LruCache<BitVec, f32, FxBuildHasher>,
 }
 
 impl World {
@@ -178,7 +178,7 @@ impl World {
             module_weights,
 
             min_entropy_slots: Vec::with_capacity(slot_count),
-            slot_entropy_lru: LruCache::new(LRU_SIZE),
+            slot_entropy_lru: LruCache::with_hasher(LRU_SIZE, FxBuildHasher::default()),
         }
     }
 
@@ -387,7 +387,7 @@ impl World {
         let slots_len = self.slots.len();
         let [dim_x, dim_y, dim_z] = self.dims;
 
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::with_hasher(FxBuildHasher::default());
         visited.insert(slot_index);
 
         let mut stack = vec![StackEntry {
@@ -598,7 +598,7 @@ impl Clone for World {
             module_weights: self.module_weights.clone(),
 
             min_entropy_slots: Vec::with_capacity(self.min_entropy_slots.len()),
-            slot_entropy_lru: LruCache::new(LRU_SIZE),
+            slot_entropy_lru: LruCache::with_hasher(LRU_SIZE, FxBuildHasher::default()),
         }
     }
 }
