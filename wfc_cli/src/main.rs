@@ -7,6 +7,7 @@ use std::io::{BufReader, BufWriter, Write as _};
 use std::num::ParseIntError;
 use std::path::Path;
 use std::process;
+use std::str::FromStr;
 
 use clap::Clap as _;
 use wfc_core::rand_core::SeedableRng as _;
@@ -35,6 +36,9 @@ struct Options {
     /// Z world dimension.
     #[clap(long, short = "z", default_value = "10")]
     pub world_z: u16,
+    /// Entropy computation.
+    #[clap(long, default_value = "linear")]
+    pub entropy: Entropy,
     /// The seed to initalize the random number generator.
     #[clap(long, parse(try_from_str = parse_number_literal))]
     pub random_seed: Option<u128>,
@@ -42,6 +46,24 @@ struct Options {
     /// looking for a deterministic solution.
     #[clap(long, default_value = "100")]
     pub max_attempts: u32,
+}
+
+#[derive(PartialEq, Eq)]
+enum Entropy {
+    Linear,
+    Shannon,
+}
+
+impl FromStr for Entropy {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "linear" => Ok(Self::Linear),
+            "shannon" => Ok(Self::Shannon),
+            _ => Err("Unknown entropy"),
+        }
+    }
 }
 
 fn main() {
@@ -109,7 +131,11 @@ fn main() {
             }
         };
 
-        let mut world = World::new(dims, import_result.adjacencies);
+        let mut world = World::new(
+            dims,
+            import_result.adjacencies,
+            options.entropy == Entropy::Shannon,
+        );
 
         let buf_reader = BufReader::new(world_state_file);
         if let Err(err) =
@@ -139,7 +165,11 @@ fn main() {
 
         world
     } else {
-        World::new(dims, import_result.adjacencies)
+        World::new(
+            dims,
+            import_result.adjacencies,
+            options.entropy == Entropy::Shannon,
+        )
     };
 
     let mut world = initial_world.clone();

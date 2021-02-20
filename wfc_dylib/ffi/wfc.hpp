@@ -10,6 +10,11 @@ enum class AdjacencyRuleKind : uint32_t {
   Z = 2,
 };
 
+enum class Entropy : uint32_t {
+  Linear = 0,
+  Shannon = 1,
+};
+
 enum class WfcObserveResult : uint32_t {
   Deterministic = 0,
   Contradiction = 1,
@@ -69,7 +74,8 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
                                              uintptr_t adjacency_rules_len,
                                              uint16_t world_x,
                                              uint16_t world_y,
-                                             uint16_t world_z);
+                                             uint16_t world_z,
+                                             Entropy entropy);
 
 /// Creates an instance of Wave Function Collapse world state as a copy of
 /// existing world state.

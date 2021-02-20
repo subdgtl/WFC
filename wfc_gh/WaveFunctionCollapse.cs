@@ -18,8 +18,9 @@ namespace wfc_gh
         private const int IN_PARAM_WORLD_SIZE = 3;
         private const int IN_PARAM_WORLD_SLOT_POSITION = 4;
         private const int IN_PARAM_WORLD_SLOT_MODULE = 5;
-        private const int IN_PARAM_RANDOM_SEED = 6;
-        private const int IN_PARAM_MAX_ATTEMPTS = 7;
+        private const int IN_PARAM_ENTROPY = 6;
+        private const int IN_PARAM_RANDOM_SEED = 7;
+        private const int IN_PARAM_MAX_ATTEMPTS = 8;
 
         private const int OUT_PARAM_DEBUG_OUTPUT = 0;
         private const int OUT_PARAM_WORLD_SLOT_POSITION = 1;
@@ -73,6 +74,12 @@ namespace wfc_gh
                                       "SM",
                                       "A list of string identifiers defining modules to add to slots at position from SP. Zipped with SP. A module can occur multiple times in this list, each adding the module at the corresponging SP position.",
                                       GH_ParamAccess.list);
+
+            pManager.AddBooleanParameter("Use Shannon Entropy",
+                                         "E",
+                                         "Whether to use Shannon Entropy instead of the simpler linear entropy calculations",
+                                         GH_ParamAccess.item,
+                                         false);
 
             pManager.AddIntegerParameter("Random seed",
                                          "S",
@@ -339,6 +346,18 @@ namespace wfc_gh
             }
 
             //
+            // -- Entropy --
+            //
+
+            bool useShannonEntropy = false;
+            DA.GetData(IN_PARAM_ENTROPY, ref useShannonEntropy);
+
+            Entropy entropy = Entropy.Linear;
+            if (useShannonEntropy) {
+                entropy = Entropy.Shannon;
+            }
+
+            //
             // -- Random seed --
             //
             // wfc_rng_state_init needs 128 bits worth of random seed, but that
@@ -391,7 +410,8 @@ namespace wfc_gh
                                                              (UIntPtr)adjacencyRules.Length,
                                                              worldX,
                                                              worldY,
-                                                             worldZ);
+                                                             worldZ,
+                                                             entropy);
 
                     switch (result)
                     {
@@ -549,6 +569,12 @@ namespace wfc_gh
         public byte module_high;
     }
 
+    internal enum Entropy : uint
+    {
+        Linear = 0,
+        Shannon = 1,
+    }
+
     internal enum WfcWorldStateInitResult : uint
     {
         Ok = 0,
@@ -632,7 +658,8 @@ namespace wfc_gh
                                                                                    UIntPtr adjacency_rules_len,
                                                                                    ushort world_x,
                                                                                    ushort world_y,
-                                                                                   ushort world_z);
+                                                                                   ushort world_z,
+                                                                                   Entropy entropy);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_world_state_init_from(IntPtr* wfc_world_state_handle_ptr,
