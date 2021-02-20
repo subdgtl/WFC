@@ -417,6 +417,7 @@ pub extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
 pub enum WfcObserveResult {
     Deterministic = 0,
     Contradiction = 1,
+    Nondeterministic = 2,
 }
 
 /// Runs observations on the world until a deterministic or contradictory result
@@ -442,6 +443,8 @@ pub enum WfcObserveResult {
 pub extern "C" fn wfc_observe(
     wfc_world_state_handle: WfcWorldStateHandle,
     wfc_rng_state_handle: WfcRngStateHandle,
+    limit_observations_usize: usize,
+    max_observations: usize,
 ) -> WfcObserveResult {
     let world = unsafe {
         assert!(!wfc_world_state_handle.0.is_null());
@@ -452,11 +455,20 @@ pub extern "C" fn wfc_observe(
         &mut *wfc_rng_state_handle.0
     };
 
+    let limit_observations = limit_observations_usize > 0;
+
+    let mut observations = 0_usize;
     loop {
         let (_, status) = world.observe(rng);
 
+        observations += 1;
+
         match status {
-            WorldStatus::Nondeterministic => (),
+            WorldStatus::Nondeterministic => {
+                if  limit_observations && observations == max_observations {
+                    return WfcObserveResult::Nondeterministic;
+                }
+            },
             WorldStatus::Deterministic => {
                 return WfcObserveResult::Deterministic;
             }

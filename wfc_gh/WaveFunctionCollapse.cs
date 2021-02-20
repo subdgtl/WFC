@@ -464,9 +464,13 @@ namespace wfc_gh
             bool foundDeterministic = false;
             uint attempts = 0;
 
+            uint limitObservations = 1;
+            uint maxObservations = UInt32.MaxValue;
+
+
             while (!foundDeterministic && attempts < maxAttempts)
             {
-                var result = Native.wfc_observe(wfcWorldStateHandle, wfcRngStateHandle);
+                var result = Native.wfc_observe(wfcWorldStateHandle, wfcRngStateHandle, (UIntPtr)limitObservations, (UIntPtr)maxObservations);
                 if (result == WfcObserveResult.Deterministic)
                 {
                     foundDeterministic = true;
@@ -692,7 +696,9 @@ namespace wfc_gh
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
-                                                            IntPtr wfc_rng_state_handle);
+                                                            IntPtr wfc_rng_state_handle,
+                                                            UIntPtr limit_observations,
+                                                            UIntPtr max_observations);
     }
 
 }
