@@ -136,11 +136,7 @@ pub unsafe extern "C" fn wfc_world_state_init(
         .map(|adjacency_rule| (*adjacency_rule).into())
         .collect();
 
-    let world = World::new(
-        [world_x, world_y, world_z],
-        adjacencies,
-        entropy == Entropy::Shannon,
-    );
+    let world = World::new([world_x, world_y, world_z], adjacencies, entropy == Entropy::Shannon);
     let world_ptr = Box::into_raw(Box::new(world));
     let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
 
