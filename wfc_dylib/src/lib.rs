@@ -445,6 +445,10 @@ pub enum WfcObserveResult {
 /// deterministic state or [`WfcObserveResult::Contradiction`] if the
 /// observation made by this function created a world where a slot is occupied
 /// by zero modules.
+/// 
+/// The number of performed observations can be limited if `max_observations`
+/// is set to a non-zero value. For zero the number of observations remains
+/// unlimited.
 ///
 /// # Safety
 ///
@@ -461,9 +465,8 @@ pub enum WfcObserveResult {
 pub extern "C" fn wfc_observe(
     wfc_world_state_handle: WfcWorldStateHandle,
     wfc_rng_state_handle: WfcRngStateHandle,
-    limit_observations_usize: usize,
-    max_observations: usize,
-    spent_observations: *mut usize,
+    max_observations: u32,
+    spent_observations: *mut u32,
 ) -> WfcObserveResult {
     let world = unsafe {
         assert!(!wfc_world_state_handle.0.is_null());
@@ -479,9 +482,7 @@ pub extern "C" fn wfc_observe(
         &mut *spent_observations
     };
 
-    let limit_observations = limit_observations_usize > 0;
-
-    *observations = 0_usize;
+    *observations = 0;
     loop {
         let (_, status) = world.observe(rng);
 
@@ -489,7 +490,7 @@ pub extern "C" fn wfc_observe(
 
         match status {
             WorldStatus::Nondeterministic => {
-                if limit_observations && *observations >= max_observations {
+                if *observations == max_observations {
                     return WfcObserveResult::Nondeterministic;
                 }
             }

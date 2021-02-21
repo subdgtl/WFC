@@ -18,6 +18,7 @@ enum class Entropy : uint32_t {
 enum class WfcObserveResult : uint32_t {
   Deterministic = 0,
   Contradiction = 1,
+  Nondeterministic = 2,
 };
 
 enum class WfcWorldStateInitResult : uint32_t {
@@ -171,6 +172,9 @@ WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_wo
                                                       const uint64_t (*slots_ptr)[4],
                                                       uintptr_t slots_len);
 
+/// Gets the current world status without making an observation.
+WfcObserveResult wfc_world_status(WfcWorldStateHandle wfc_world_state_handle);
+
 /// Reads slots from the provided handle into `slots_ptr` and `slots_len`.
 ///
 /// State is stored in sparse bit vectors where each bit encodes a module
@@ -243,6 +247,10 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
 /// observation made by this function created a world where a slot is occupied
 /// by zero modules.
 ///
+/// The number of performed observations can be limited if `max_observations`
+/// is set to a non-zero value. For zero the number of observations remains
+/// unlimited.
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
@@ -255,6 +263,8 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
 /// - `wfc_rng_state_handle` must be a valid handle created via
 ///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
 WfcObserveResult wfc_observe(WfcWorldStateHandle wfc_world_state_handle,
-                             WfcRngStateHandle wfc_rng_state_handle);
+                             WfcRngStateHandle wfc_rng_state_handle,
+                             uint32_t max_observations,
+                             uint32_t *spent_observations);
 
 } // extern "C"
