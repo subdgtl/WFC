@@ -463,27 +463,25 @@ namespace wfc_gh
 
             bool foundDeterministic = false;
             uint attempts = 0;
-
             uint maxObservations = UInt32.MaxValue;
             uint spentObservations = 0;
             
             unsafe{
-                while (!foundDeterministic && attempts < maxAttempts)
+                while (true)
                 {
                     var result = Native.wfc_observe(wfcWorldStateHandle,
                                                     wfcRngStateHandle,
-                                                    (UIntPtr)maxObservations,
+                                                    axObservations,
                                                     &spentObservations);
-                    if (result == WfcObserveResult.Deterministic)
-                    {
-                        foundDeterministic = true;
-                    }
-                    else
-                    {
-                        Native.wfc_world_state_clone_from(wfcWorldStateHandle,
-                                                        wfcWorldStateHandleBackup);
-                    }
                     attempts++;
+                    foundDeterministic = observationResult == WfcObserveResult.Deterministic;
+
+                    if (foundDeterministic
+                        || observationResult == WfcObserveResult.Nondeterministic
+                        || attempts == maxAttempts) {
+                        break;
+                    }
+                    Native.wfc_world_state_clone_from(wfcWorldStateHandle, wfcWorldStateHandleBackup);
                 }
             }
 

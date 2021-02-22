@@ -459,14 +459,6 @@ pub extern "C" fn wfc_observe(
         &mut *wfc_world_state_handle.0
     };
 
-    if max_observations == 0 {
-        return match world.world_status() {
-            WorldStatus::Contradiction => WfcObserveResult::Contradiction,
-            WorldStatus::Deterministic => WfcObserveResult::Deterministic,
-            WorldStatus::Nondeterministic => WfcObserveResult::Nondeterministic,
-        };
-    }
-
     let rng = unsafe {
         assert!(!wfc_rng_state_handle.0.is_null());
         &mut *wfc_rng_state_handle.0
@@ -476,6 +468,14 @@ pub extern "C" fn wfc_observe(
         assert!(!spent_observations.is_null());
         &mut *spent_observations
     };
+
+    if max_observations == 0 {
+        return match world.world_status() {
+            WorldStatus::Contradiction => WfcObserveResult::Contradiction,
+            WorldStatus::Deterministic => WfcObserveResult::Deterministic,
+            WorldStatus::Nondeterministic => WfcObserveResult::Nondeterministic,
+        };
+    }
 
     let mut observations = 0;
     loop {
