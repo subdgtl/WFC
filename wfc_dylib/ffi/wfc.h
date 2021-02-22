@@ -191,11 +191,6 @@ WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_wo
                                                       uintptr_t slots_len);
 
 /**
- * Gets the current world status without making an observation.
- */
-WfcObserveResult wfc_world_status(WfcWorldStateHandle wfc_world_state_handle);
-
-/**
  * Reads slots from the provided handle into `slots_ptr` and `slots_len`.
  *
  * State is stored in sparse bit vectors where each bit encodes a module

@@ -465,38 +465,27 @@ namespace wfc_gh
             uint attempts = 0;
 
             uint maxObservations = UInt32.MaxValue;
-
-            var spentObservations = IntPtr.Zero;
-
-            if (maxObservations == 0){
-                var result = Native.wfc_world_status(wfcWorldStateHandle);
-                if (result == WfcObserveResult.Deterministic)
-                        {
-                            foundDeterministic = true;
-                        }
-            } else {
-                unsafe{
-                    while (!foundDeterministic && attempts < maxAttempts)
+            uint spentObservations = 0;
+            
+            unsafe{
+                while (!foundDeterministic && attempts < maxAttempts)
+                {
+                    var result = Native.wfc_observe(wfcWorldStateHandle,
+                                                    wfcRngStateHandle,
+                                                    (UIntPtr)maxObservations,
+                                                    &spentObservations);
+                    if (result == WfcObserveResult.Deterministic)
                     {
-                        var result = Native.wfc_observe(wfcWorldStateHandle,
-                                                        wfcRngStateHandle,
-                                                        (UIntPtr)maxObservations,
-                                                        &spentObservations);
-                        if (result == WfcObserveResult.Deterministic)
-                        {
-                            foundDeterministic = true;
-                        }
-                        else
-                        {
-                            Native.wfc_world_state_clone_from(wfcWorldStateHandle,
-                                                            wfcWorldStateHandleBackup);
-                        }
-
-                        attempts++;
+                        foundDeterministic = true;
                     }
+                    else
+                    {
+                        Native.wfc_world_state_clone_from(wfcWorldStateHandle,
+                                                        wfcWorldStateHandleBackup);
+                    }
+                    attempts++;
                 }
             }
-
 
             if (!foundDeterministic)
             {
@@ -701,9 +690,6 @@ namespace wfc_gh
                                                                      UIntPtr slots_len);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static extern WfcObserveResult wfc_world_status(IntPtr wfc_world_state_handle);
-
-        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
                                                               ulong rng_seed_low,
                                                               ulong rng_seed_high);
@@ -714,8 +700,8 @@ namespace wfc_gh
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
                                                             IntPtr wfc_rng_state_handle,
-                                                            UIntPtr max_observations,
-                                                            IntPtr* observationsSpent);
+                                                            uint max_observations,
+                                                            uint* observationsSpent);
     }
 
 }
