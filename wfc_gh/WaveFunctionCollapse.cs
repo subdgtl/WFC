@@ -471,7 +471,7 @@ namespace wfc_gh
                 {
                     var result = Native.wfc_observe(wfcWorldStateHandle,
                                                     wfcRngStateHandle,
-                                                    axObservations,
+                                                    maxObservations,
                                                     &spentObservations);
                     attempts++;
                     foundDeterministic = observationResult == WfcObserveResult.Deterministic;
