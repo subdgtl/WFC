@@ -448,23 +448,23 @@ pub enum WfcObserveResult {
 /// - `wfc_rng_state_handle` must be a valid handle created via
 ///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
 #[no_mangle]
-pub extern "C" fn wfc_observe(
+pub unsafe extern "C" fn wfc_observe(
     wfc_world_state_handle: WfcWorldStateHandle,
     wfc_rng_state_handle: WfcRngStateHandle,
     max_observations: u32,
     spent_observations: *mut u32,
 ) -> WfcObserveResult {
-    let world = unsafe {
+    let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &mut *wfc_world_state_handle.0
     };
 
-    let rng = unsafe {
+    let rng = {
         assert!(!wfc_rng_state_handle.0.is_null());
         &mut *wfc_rng_state_handle.0
     };
 
-    let out_observations = unsafe {
+    let out_observations = {
         assert!(!spent_observations.is_null());
         &mut *spent_observations
     };
