@@ -361,7 +361,7 @@ impl World {
         }
     }
 
-    fn world_status(&self) -> WorldStatus {
+    pub fn world_status(&self) -> WorldStatus {
         let mut lt1 = false;
         let mut gt1 = false;
         for slot in &self.slots {

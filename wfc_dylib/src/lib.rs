@@ -126,7 +126,7 @@ pub unsafe extern "C" fn wfc_world_state_init(
         let module_low = u32::from(rule.module_low);
         let module_high = u32::from(rule.module_high);
 
-        if  module_low >= MAX_MODULE_COUNT || module_high >= MAX_MODULE_COUNT {
+        if module_low >= MAX_MODULE_COUNT || module_high >= MAX_MODULE_COUNT {
             return WfcWorldStateInitResult::ErrTooManyModules;
         }
     }
@@ -136,7 +136,11 @@ pub unsafe extern "C" fn wfc_world_state_init(
         .map(|adjacency_rule| (*adjacency_rule).into())
         .collect();
 
-    let world = World::new([world_x, world_y, world_z], adjacencies, entropy == Entropy::Shannon);
+    let world = World::new(
+        [world_x, world_y, world_z],
+        adjacencies,
+        entropy == Entropy::Shannon,
+    );
     let world_ptr = Box::into_raw(Box::new(world));
     let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
 
@@ -417,6 +421,7 @@ pub extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
 pub enum WfcObserveResult {
     Deterministic = 0,
     Contradiction = 1,
+    Nondeterministic = 2,
 }
 
 /// Runs observations on the world until a deterministic or contradictory result
@@ -426,6 +431,10 @@ pub enum WfcObserveResult {
 /// deterministic state or [`WfcObserveResult::Contradiction`] if the
 /// observation made by this function created a world where a slot is occupied
 /// by zero modules.
+///
+/// The number of performed observations can be limited if `max_observations`
+/// is set to a non-zero value. For zero the number of observations remains
+/// unlimited.
 ///
 /// # Safety
 ///
@@ -439,28 +448,53 @@ pub enum WfcObserveResult {
 /// - `wfc_rng_state_handle` must be a valid handle created via
 ///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
 #[no_mangle]
-pub extern "C" fn wfc_observe(
+pub unsafe extern "C" fn wfc_observe(
     wfc_world_state_handle: WfcWorldStateHandle,
     wfc_rng_state_handle: WfcRngStateHandle,
+    max_observations: u32,
+    spent_observations: *mut u32,
 ) -> WfcObserveResult {
-    let world = unsafe {
+    let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &mut *wfc_world_state_handle.0
     };
-    let rng = unsafe {
+
+    let rng = {
         assert!(!wfc_rng_state_handle.0.is_null());
         &mut *wfc_rng_state_handle.0
     };
 
+    let out_observations = {
+        assert!(!spent_observations.is_null());
+        &mut *spent_observations
+    };
+
+    if max_observations == 0 {
+        return match world.world_status() {
+            WorldStatus::Contradiction => WfcObserveResult::Contradiction,
+            WorldStatus::Deterministic => WfcObserveResult::Deterministic,
+            WorldStatus::Nondeterministic => WfcObserveResult::Nondeterministic,
+        };
+    }
+
+    let mut observations = 0;
     loop {
         let (_, status) = world.observe(rng);
+        observations += 1;
 
         match status {
-            WorldStatus::Nondeterministic => (),
+            WorldStatus::Nondeterministic => {
+                if observations == max_observations {
+                    *out_observations = observations;
+                    return WfcObserveResult::Nondeterministic;
+                }
+            }
             WorldStatus::Deterministic => {
+                *out_observations = observations;
                 return WfcObserveResult::Deterministic;
             }
             WorldStatus::Contradiction => {
+                *out_observations = observations;
                 return WfcObserveResult::Contradiction;
             }
         }

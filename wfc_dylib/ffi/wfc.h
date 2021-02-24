@@ -19,6 +19,7 @@ typedef uint32_t Entropy;
 enum WfcObserveResult {
   Deterministic = 0,
   Contradiction = 1,
+  Nondeterministic = 2,
 };
 typedef uint32_t WfcObserveResult;
 
@@ -268,6 +269,10 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
  * observation made by this function created a world where a slot is occupied
  * by zero modules.
  *
+ * The number of performed observations can be limited if `max_observations`
+ * is set to a non-zero value. For zero the number of observations remains
+ * unlimited.
+ *
  * # Safety
  *
  * Behavior is undefined if any of the following conditions are violated:
@@ -281,4 +286,6 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
  *   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
  */
 WfcObserveResult wfc_observe(WfcWorldStateHandle wfc_world_state_handle,
-                             WfcRngStateHandle wfc_rng_state_handle);
+                             WfcRngStateHandle wfc_rng_state_handle,
+                             uint32_t max_observations,
+                             uint32_t *spent_observations);

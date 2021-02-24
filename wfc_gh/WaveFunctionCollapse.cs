@@ -463,21 +463,26 @@ namespace wfc_gh
 
             bool foundDeterministic = false;
             uint attempts = 0;
-
-            while (!foundDeterministic && attempts < maxAttempts)
-            {
-                var result = Native.wfc_observe(wfcWorldStateHandle, wfcRngStateHandle);
-                if (result == WfcObserveResult.Deterministic)
+            uint maxObservations = UInt32.MaxValue;
+            uint spentObservations = 0;
+            
+            unsafe{
+                while (true)
                 {
-                    foundDeterministic = true;
-                }
-                else
-                {
-                    Native.wfc_world_state_clone_from(wfcWorldStateHandle,
-                                                      wfcWorldStateHandleBackup);
-                }
+                    var result = Native.wfc_observe(wfcWorldStateHandle,
+                                                    wfcRngStateHandle,
+                                                    maxObservations,
+                                                    &spentObservations);
+                    attempts++;
+                    foundDeterministic = result == WfcObserveResult.Deterministic;
 
-                attempts++;
+                    if (foundDeterministic
+                        || result == WfcObserveResult.Nondeterministic
+                        || attempts == maxAttempts) {
+                        break;
+                    }
+                    Native.wfc_world_state_clone_from(wfcWorldStateHandle, wfcWorldStateHandleBackup);
+                }
             }
 
             if (!foundDeterministic)
@@ -592,6 +597,7 @@ namespace wfc_gh
     internal enum WfcObserveResult: uint {
         Deterministic = 0,
         Contradiction = 1,
+        Nondeterministic = 2,
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -691,8 +697,10 @@ namespace wfc_gh
         internal static extern void wfc_rng_state_free(IntPtr wfc_rng_state_handle);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
-                                                            IntPtr wfc_rng_state_handle);
+        internal static unsafe extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
+                                                            IntPtr wfc_rng_state_handle,
+                                                            uint max_observations,
+                                                            uint* observationsSpent);
     }
 
 }
