@@ -474,10 +474,10 @@ namespace wfc_gh
                                                     maxObservations,
                                                     &spentObservations);
                     attempts++;
-                    foundDeterministic = observationResult == WfcObserveResult.Deterministic;
+                    foundDeterministic = result == WfcObserveResult.Deterministic;
 
                     if (foundDeterministic
-                        || observationResult == WfcObserveResult.Nondeterministic
+                        || result == WfcObserveResult.Nondeterministic
                         || attempts == maxAttempts) {
                         break;
                     }
@@ -597,6 +597,7 @@ namespace wfc_gh
     internal enum WfcObserveResult: uint {
         Deterministic = 0,
         Contradiction = 1,
+        Nondeterministic = 2,
     }
 
     [StructLayout(LayoutKind.Sequential)]
