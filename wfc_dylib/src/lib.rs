@@ -85,6 +85,10 @@ pub extern "C" fn wfc_max_module_count_get() -> u32 {
 /// To change the world state to a different configuration, use
 /// [`wfc_world_state_slots_set`].
 ///
+/// Initially the world is configured to have uniform entropy computation
+/// weights for each module across all slots, but this can be customized with
+/// [`wfc_world_state_slot_module_weights_set`];
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
@@ -357,6 +361,50 @@ pub unsafe extern "C" fn wfc_world_state_slots_get(
     export_slots(world, slots);
 }
 
+/// Writes Wave Function Collapse module weights for each slot from
+/// `slot_module_weights_ptr` and `slot_module_weights_len` into the provided
+/// handle.
+///
+/// The written weights will influence slot entropy computation for the slot
+/// they were written.
+///
+/// The weights are stored in a four dimensional array (compacted in a one
+/// dimensional array). To get a slice of weights on position `[x, y, z]`, first
+/// slice by Z, then Y, then X. The lenght of the weight slice must be equal to
+/// the world's module count.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
+///
+/// - `slot_module_weights_ptr` and `slot_module_weights_len` are used to
+///   construct a slice. See [`std::slice::from_raw_parts`].
+#[no_mangle]
+pub unsafe extern "C" fn wfc_world_state_slot_module_weights_set(
+    wfc_world_state_handle: WfcWorldStateHandle,
+    slot_module_weights_ptr: *const f32,
+    slot_module_weights_len: usize,
+) {
+    let world = {
+        assert!(!wfc_world_state_handle.0.is_null());
+        &mut *wfc_world_state_handle.0
+    };
+
+    let slot_module_weights = {
+        assert!(!slot_module_weights_ptr.is_null());
+        assert_ne!(slot_module_weights_len, 0);
+        assert!(slot_module_weights_len * mem::size_of::<f32>() < isize::MAX as usize);
+        slice::from_raw_parts(slot_module_weights_ptr, slot_module_weights_len)
+    };
+
+    import_slot_module_weights(world, slot_module_weights);
+}
+
 /// Creates an instance of pseudo-random number generator and initializes it
 /// with the provided seed.
 ///
@@ -489,6 +537,10 @@ pub unsafe extern "C" fn wfc_observe(
     }
 }
 
+// TODO(yan): Import/Export convert indices to positions and back, set bits by
+// one instead of copying memory, etc... Should we expose the underlying
+// representation?
+
 fn import_slots(world: &mut World, world_state: &[[u64; 4]]) {
     let [dim_x, dim_y, dim_z] = world.dims();
     assert_eq!(
@@ -540,5 +592,20 @@ fn export_slot(world: &World, pos: [u16; 3], slot_state: &mut [u64; 4]) {
         let bit_index = cast_usize(module) % 64;
 
         slot_state[blk_index] |= 1 << bit_index;
+    }
+}
+
+fn import_slot_module_weights(world: &mut World, slot_module_weights: &[f32]) {
+    let [dim_x, dim_y, dim_z] = world.dims();
+    let slot_count = usize::from(dim_x) * usize::from(dim_y) * usize::from(dim_z);
+    let module_count = world.module_count();
+    assert_eq!(
+        slot_module_weights.len(),
+        usize::from(module_count) * slot_count,
+    );
+
+    for (i, weights_chunk) in slot_module_weights.chunks_exact(module_count).enumerate() {
+        let pos = wfc_core::index_to_position(slot_count, world.dims(), i);
+        world.set_slot_module_weights(pos, weights_chunk);
     }
 }

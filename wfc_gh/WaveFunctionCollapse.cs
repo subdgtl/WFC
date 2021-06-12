@@ -662,6 +662,11 @@ namespace wfc_gh
                                                                      UIntPtr slots_len);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern void wfc_world_state_slot_module_weights_set(IntPtr wfc_world_state_handle,
+                                                                                   float* slot_module_weights_ptr,
+                                                                                   UIntPtr slot_module_weights_len);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
                                                               ulong rng_seed_low,
                                                               ulong rng_seed_high);
@@ -673,7 +678,7 @@ namespace wfc_gh
         internal static unsafe extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
                                                             IntPtr wfc_rng_state_handle,
                                                             uint max_observations,
-                                                            uint* observationsSpent);
+                                                            uint* spent_observations);
     }
 
 }

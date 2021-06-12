@@ -64,6 +64,10 @@ uint32_t wfc_max_module_count_get(void);
  * To change the world state to a different configuration, use
  * [`wfc_world_state_slots_set`].
  *
+ * Initially the world is configured to have uniform entropy computation
+ * weights for each module across all slots, but this can be customized with
+ * [`wfc_world_state_slot_module_weights_set`];
+ *
  * # Safety
  *
  * Behavior is undefined if any of the following conditions are violated:
@@ -221,6 +225,35 @@ WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_wo
 void wfc_world_state_slots_get(WfcWorldStateHandle wfc_world_state_handle,
                                uint64_t (*slots_ptr)[4],
                                uintptr_t slots_len);
+
+/**
+ * Writes Wave Function Collapse module weights for each slot from
+ * `slot_module_weights_ptr` and `slot_module_weights_len` into the provided
+ * handle.
+ *
+ * The written weights will influence slot entropy computation for the slot
+ * they were written.
+ *
+ * The weights are stored in a four dimensional array (compacted in a one
+ * dimensional array). To get a slice of weights on position `[x, y, z]`, first
+ * slice by Z, then Y, then X. The lenght of the weight slice must be equal to
+ * the world's module count.
+ *
+ * # Safety
+ *
+ * Behavior is undefined if any of the following conditions are violated:
+ *
+ * - `wfc_world_state_handle` must be a valid handle created via
+ *   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+ *   [`wfc_world_state_init_from`] and not yet freed via
+ *   [`wfc_world_state_free`],
+ *
+ * - `slot_module_weights_ptr` and `slot_module_weights_len` are used to
+ *   construct a slice. See [`std::slice::from_raw_parts`].
+ */
+void wfc_world_state_slot_module_weights_set(WfcWorldStateHandle wfc_world_state_handle,
+                                             const float *slot_module_weights_ptr,
+                                             uintptr_t slot_module_weights_len);
 
 /**
  * Creates an instance of pseudo-random number generator and initializes it

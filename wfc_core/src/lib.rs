@@ -234,6 +234,17 @@ impl World {
         slot.iter()
     }
 
+    pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
+        assert_eq!(weights.len(), self.module_count);
+
+        self.slot_module_weights_customized = true;
+
+        let index_base = self.module_count * position_to_index(self.slots.len(), self.dims, pos);
+
+        let module_weights = &mut self.slot_module_weights[index_base..self.module_count];
+        module_weights.copy_from_slice(weights);
+    }
+
     /// Resets the world to initial state, where every slot has the possibility
     /// to contain any module.
     pub fn reset(&mut self) {
