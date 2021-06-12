@@ -10,12 +10,6 @@ enum AdjacencyRuleKind {
 };
 typedef uint32_t AdjacencyRuleKind;
 
-enum Entropy {
-  Linear = 0,
-  Shannon = 1,
-};
-typedef uint32_t Entropy;
-
 enum WfcObserveResult {
   Deterministic = 0,
   Contradiction = 1,
@@ -85,8 +79,7 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
                                              uintptr_t adjacency_rules_len,
                                              uint16_t world_x,
                                              uint16_t world_y,
-                                             uint16_t world_z,
-                                             Entropy entropy);
+                                             uint16_t world_z);
 
 /**
  * Creates an instance of Wave Function Collapse world state as a copy of

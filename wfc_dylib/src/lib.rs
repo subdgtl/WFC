@@ -53,13 +53,6 @@ impl Into<Adjacency> for AdjacencyRule {
     }
 }
 
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Entropy {
-    Linear = 0,
-    Shannon = 1,
-}
-
 /// An opaque handle to the Wave Function Collapse world state. Actually a
 /// pointer, but shhh!
 #[repr(transparent)]
@@ -109,7 +102,6 @@ pub unsafe extern "C" fn wfc_world_state_init(
     world_x: u16,
     world_y: u16,
     world_z: u16,
-    entropy: Entropy,
 ) -> WfcWorldStateInitResult {
     let adjacency_rules = {
         assert!(!adjacency_rules_ptr.is_null());
@@ -136,11 +128,7 @@ pub unsafe extern "C" fn wfc_world_state_init(
         .map(|adjacency_rule| (*adjacency_rule).into())
         .collect();
 
-    let world = World::new(
-        [world_x, world_y, world_z],
-        adjacencies,
-        entropy == Entropy::Shannon,
-    );
+    let world = World::new([world_x, world_y, world_z], adjacencies);
     let world_ptr = Box::into_raw(Box::new(world));
     let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
 

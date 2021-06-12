@@ -9,12 +9,9 @@ use std::convert::TryFrom;
 use std::fmt;
 
 use fxhash::FxBuildHasher;
-use lru::LruCache;
 
 use crate::bitvec::BitVec;
 use crate::convert::cast_u8;
-
-const LRU_SIZE: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -103,24 +100,22 @@ impl fmt::Display for WorldStatus {
     }
 }
 
+#[derive(Clone)]
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
-    use_shannon_entropy: bool,
 
     slots: Vec<BitVec>,
+    slot_module_weights: Vec<f32>,
     module_count: usize,
-    module_weights: Vec<f32>,
 
     /// Working memory for picking the nondeterministic slot with smallest
     /// entropy. Pre-allocated to maximum capacity.
     min_entropy_slots: Vec<usize>,
-    /// Working memory for computed slot entropies.
-    slot_entropy_lru: LruCache<BitVec, f32, FxBuildHasher>,
 }
 
 impl World {
-    pub fn new(dims: [u16; 3], adjacencies: Vec<Adjacency>, use_shannon_entropy: bool) -> Self {
+    pub fn new(dims: [u16; 3], adjacencies: Vec<Adjacency>) -> Self {
         // TODO(yan): Error handling. Do not unwind across FFI.
         assert!(dims[0] > 0);
         assert!(dims[1] > 0);
@@ -161,31 +156,27 @@ impl World {
 
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
         let slots = vec![modules; slot_count];
-
-        let mut module_weights = vec![0.0; module_count];
-        for adjacency in &adjacencies {
-            module_weights[usize::from(adjacency.module_low)] += 1.0;
-            module_weights[usize::from(adjacency.module_high)] += 1.0;
-        }
+        let slot_module_weights = vec![1.0; slot_count * module_count];
 
         Self {
             dims,
             adjacencies,
-            use_shannon_entropy,
 
             slots,
+            slot_module_weights,
             module_count,
-            module_weights,
 
             min_entropy_slots: Vec::with_capacity(slot_count),
-            slot_entropy_lru: LruCache::with_hasher(LRU_SIZE, FxBuildHasher::default()),
         }
     }
 
     pub fn clone_from(&mut self, other: &World) {
         self.dims = other.dims;
         self.adjacencies.clone_from(&other.adjacencies);
+
         self.slots.clone_from(&other.slots);
+        self.slot_module_weights.clone_from(&other.slot_module_weights);
+
         self.module_count = other.module_count;
     }
 
@@ -283,6 +274,7 @@ impl World {
         (world_changed, self.world_status())
     }
 
+    // TODO(yan): Use simpler random. Maybe the oorandom crate?
     pub fn observe<R: rand_core::RngCore>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
         let mut min_entropy = f32::INFINITY;
         self.min_entropy_slots.clear();
@@ -299,30 +291,19 @@ impl World {
                 continue;
             }
 
-            let entropy = if self.use_shannon_entropy {
-                if let Some(entropy) = self.slot_entropy_lru.get(slot) {
-                    *entropy
-                } else {
-                    let mut sum_weights = 0.0;
-                    let mut sum_weight_log_weights = 0.0;
-                    for module in slot {
-                        let weight = self.module_weights[usize::from(module)];
-                        sum_weights += weight;
-                        sum_weight_log_weights += weight * weight.ln();
-                    }
+            let mut sum_weights = 0.0;
+            let mut sum_weight_log_weights = 0.0;
+            for module in slot {
+                let weight_index = self.module_count * i + usize::from(module);
+                let weight = self.slot_module_weights[weight_index];
+                sum_weights += weight;
+                sum_weight_log_weights += weight * weight.ln();
+            }
 
-                    debug_assert!(sum_weights >= 0.0);
+            debug_assert!(sum_weights >= 0.0);
 
-                    let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
-                    debug_assert!(!entropy.is_nan());
-
-                    self.slot_entropy_lru.put(*slot, entropy);
-
-                    entropy
-                }
-            } else {
-                slot_len as f32
-            };
+            let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
+            debug_assert!(!entropy.is_nan());
 
             match entropy.partial_cmp(&min_entropy) {
                 Some(Ordering::Less) => {
@@ -582,24 +563,6 @@ impl World {
         }
 
         (changed, contradiction)
-    }
-}
-
-/// Manual [`Clone`] impl, because [`LruCache`] does not impl [`Clone`].
-impl Clone for World {
-    fn clone(&self) -> Self {
-        Self {
-            dims: self.dims,
-            adjacencies: self.adjacencies.clone(),
-            use_shannon_entropy: self.use_shannon_entropy,
-
-            slots: self.slots.clone(),
-            module_count: self.module_count,
-            module_weights: self.module_weights.clone(),
-
-            min_entropy_slots: Vec::with_capacity(self.min_entropy_slots.len()),
-            slot_entropy_lru: LruCache::with_hasher(LRU_SIZE, FxBuildHasher::default()),
-        }
     }
 }
 

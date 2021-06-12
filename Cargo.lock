@@ -207,12 +207,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lru"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f374d42cdfc1d7dbf3d3dec28afab2eb97ffbf43a3234d795b5986dbf4b90ba"
-
-[[package]]
 name = "memchr"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -468,7 +462,6 @@ name = "wfc_core"
 version = "0.1.0"
 dependencies = [
  "fxhash",
- "lru",
  "rand_core",
 ]
 
