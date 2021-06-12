@@ -107,6 +107,7 @@ pub struct World {
 
     slots: Vec<BitVec>,
     slot_module_weights: Vec<f32>,
+    slot_module_weights_customized: bool,
     module_count: usize,
 
     /// Working memory for picking the nondeterministic slot with smallest
@@ -164,6 +165,7 @@ impl World {
 
             slots,
             slot_module_weights,
+            slot_module_weights_customized: false,
             module_count,
 
             min_entropy_slots: Vec::with_capacity(slot_count),
@@ -175,7 +177,9 @@ impl World {
         self.adjacencies.clone_from(&other.adjacencies);
 
         self.slots.clone_from(&other.slots);
-        self.slot_module_weights.clone_from(&other.slot_module_weights);
+        self.slot_module_weights
+            .clone_from(&other.slot_module_weights);
+        self.slot_module_weights_customized = other.slot_module_weights_customized;
 
         self.module_count = other.module_count;
     }
@@ -291,19 +295,25 @@ impl World {
                 continue;
             }
 
-            let mut sum_weights = 0.0;
-            let mut sum_weight_log_weights = 0.0;
-            for module in slot {
-                let weight_index = self.module_count * i + usize::from(module);
-                let weight = self.slot_module_weights[weight_index];
-                sum_weights += weight;
-                sum_weight_log_weights += weight * weight.ln();
-            }
+            let entropy = if self.slot_module_weights_customized {
+                let mut sum_weights = 0.0;
+                let mut sum_weight_log_weights = 0.0;
+                for module in slot {
+                    let weight_index = self.module_count * i + usize::from(module);
+                    let weight = self.slot_module_weights[weight_index];
+                    sum_weights += weight;
+                    sum_weight_log_weights += weight * weight.ln();
+                }
 
-            debug_assert!(sum_weights >= 0.0);
+                debug_assert!(sum_weights >= 0.0);
 
-            let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
-            debug_assert!(!entropy.is_nan());
+                let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
+                debug_assert!(!entropy.is_nan());
+
+                entropy
+            } else {
+                slot_len as f32
+            };
 
             match entropy.partial_cmp(&min_entropy) {
                 Some(Ordering::Less) => {
