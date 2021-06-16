@@ -1,5 +1,4 @@
 pub const MAX_LEN: u8 = u8::MAX - 8;
-pub const MAX_LEN_U64: u64 = MAX_LEN as u64;
 
 const DATA_MASK: u64 = u64::MAX >> 8;
 
@@ -93,7 +92,7 @@ impl BitVec {
 
     fn inc_len(&mut self) {
         let mut len = self.data[3] >> 56;
-        assert!(len < MAX_LEN_U64);
+        assert!(len < MAX_LEN as u64);
 
         len += 1;
 

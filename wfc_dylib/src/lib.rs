@@ -9,8 +9,7 @@ mod convert;
 use std::mem;
 use std::slice;
 
-use wfc_core::rand_core::SeedableRng as _;
-use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
+use wfc_core::{self, Adjacency, AdjacencyKind, Rng, World, WorldStatus};
 
 use crate::convert::{cast_u8, cast_usize};
 
@@ -61,7 +60,7 @@ pub struct WfcWorldStateHandle(*mut World);
 /// An opaque handle to the PRNG state used by the Wave Function Collapse
 /// implementation. Actually a pointer, but shhh!
 #[repr(transparent)]
-pub struct WfcRngStateHandle(*mut rand_pcg::Pcg32);
+pub struct WfcRngStateHandle(*mut Rng);
 
 #[repr(u32)]
 pub enum WfcWorldStateInitResult {
@@ -427,7 +426,7 @@ pub unsafe extern "C" fn wfc_rng_state_init(
     let mut rng_seed = [0u8; 16];
     rng_seed[0..8].copy_from_slice(&rng_seed_low.to_le_bytes());
     rng_seed[8..16].copy_from_slice(&rng_seed_high.to_le_bytes());
-    let rng = rand_pcg::Pcg32::from_seed(rng_seed);
+    let rng = Rng::new(u128::from_le_bytes(rng_seed));
 
     let rng_ptr = Box::into_raw(Box::new(rng));
     let wfc_rng_state_handle = WfcRngStateHandle(rng_ptr);

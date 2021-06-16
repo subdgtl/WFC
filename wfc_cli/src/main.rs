@@ -9,8 +9,7 @@ use std::path::Path;
 use std::process;
 
 use clap::Clap as _;
-use wfc_core::rand_core::SeedableRng as _;
-use wfc_core::{World, WorldStatus};
+use wfc_core::{Rng, World, WorldStatus};
 
 // This is the same random seed wfc_gh will produce for its default seed.
 const DEFAULT_RANDOM_SEED: u128 = u128::from_le_bytes([
@@ -48,12 +47,8 @@ fn main() {
     env_logger::init();
 
     let options = Options::parse();
-    let mut rng = rand_pcg::Pcg32::from_seed(
-        options
-            .random_seed
-            .unwrap_or(DEFAULT_RANDOM_SEED)
-            .to_le_bytes(),
-    );
+    let rng_seed = options.random_seed.unwrap_or(DEFAULT_RANDOM_SEED);
+    let mut rng = Rng::new(rng_seed);
 
     let input_file_path = Path::new(&options.input);
     let input_file_stem = match input_file_path.file_stem() {
@@ -99,7 +94,7 @@ fn main() {
 
     let dims = [options.world_x, options.world_y, options.world_z];
 
-    let initial_world = if let Some(world_state_file_str) = options.world_state.as_ref() {
+    let mut initial_world = if let Some(world_state_file_str) = options.world_state.as_ref() {
         let world_state_file_path = Path::new(world_state_file_str);
         let world_state_file = match File::open(world_state_file_path) {
             Ok(file) => file,
@@ -141,6 +136,15 @@ fn main() {
     } else {
         World::new(dims, import_result.adjacencies)
     };
+
+    // XXX
+    for x in 0..(dims[0] as u16) {
+        for y in 0..(dims[1] as u16) {
+            for z in 0..(dims[2] as u16) {
+                initial_world.set_slot_module_weights([x, y, z], &[0.1, 0.9]);
+            }
+        }
+    }
 
     let mut world = initial_world.clone();
 

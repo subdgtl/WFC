@@ -1,14 +1,14 @@
 mod bitvec;
 mod convert;
 
-pub use rand_core;
-
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
+use arrayvec::ArrayVec;
 use fxhash::FxBuildHasher;
+use oorandom::Rand64;
 
 use crate::bitvec::BitVec;
 use crate::convert::cast_u8;
@@ -97,6 +97,16 @@ impl fmt::Display for WorldStatus {
             Self::Deterministic => write!(f, "deterministic"),
             Self::Contradiction => write!(f, "contradiction"),
         }
+    }
+}
+
+// Note: We could have used Rand32, but world position is up to 48 bits, so we
+// use 64 bit RNG.
+pub struct Rng(Rand64);
+
+impl Rng {
+    pub fn new(seed: u128) -> Self {
+        Self(Rand64::new(seed))
     }
 }
 
@@ -241,7 +251,8 @@ impl World {
 
         let index_base = self.module_count * position_to_index(self.slots.len(), self.dims, pos);
 
-        let module_weights = &mut self.slot_module_weights[index_base..index_base + self.module_count];
+        let module_weights =
+            &mut self.slot_module_weights[index_base..index_base + self.module_count];
         module_weights.copy_from_slice(weights);
     }
 
@@ -289,8 +300,7 @@ impl World {
         (world_changed, self.world_status())
     }
 
-    // TODO(yan): Use simpler random. Maybe the oorandom crate?
-    pub fn observe<R: rand_core::RngCore>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
+    pub fn observe(&mut self, rng: &mut Rng) -> (bool, WorldStatus) {
         let mut min_entropy = f32::INFINITY;
         self.min_entropy_slots.clear();
 
@@ -343,12 +353,14 @@ impl World {
         if self.min_entropy_slots.is_empty() {
             (false, WorldStatus::Deterministic)
         } else {
-            let min_entropy_slot_index = choose_random(self.min_entropy_slots.iter().copied(), rng);
+            let rand32 = &mut rng.0;
+
+            let min_entropy_slot_index = choose_slot(rand32, &self.min_entropy_slots);
             let min_entropy_slot = &mut self.slots[min_entropy_slot_index];
 
             // Pick a random module to materialize and remove other
             // possibilities from the slot.
-            let chosen_module = choose_random(min_entropy_slot.iter(), rng);
+            let chosen_module = choose_module(rand32, &min_entropy_slot);
 
             min_entropy_slot.clear();
             min_entropy_slot.add(chosen_module);
@@ -587,25 +599,48 @@ impl World {
     }
 }
 
-fn choose_random<I, T, R>(mut iter: I, rng: &mut R) -> T
-where
-    I: Iterator<Item = T>,
-    R: rand_core::RngCore,
-{
-    let (size_hint_low, size_hint_high) = iter.size_hint();
+fn choose_slot(rng: &mut Rand64, slots: &[usize]) -> usize {
+    assert!(slots.len() > 0);
 
-    // Make sure whatever iterator we passed in has reasonable size hints.
-    debug_assert!(size_hint_low > 0);
-    debug_assert_eq!(Some(size_hint_low), size_hint_high);
+    let rand_num = rng.rand_u64() as usize;
+    let index = rand_num % slots.len();
+    slots[index]
+}
 
-    // Take 64 bits of random and possibly truncate when casting to usize on
-    // non-64bit platforms.
-    let rand_num = rng.next_u64() as usize;
+fn choose_module(rng: &mut Rand64, slot: &BitVec) -> u8 {
+    assert!(slot.len() > 0);
 
-    // TODO(yan): @Correctness How should we correctly create the index from the
-    // random number to preserve the uniformity of the sampled distribution?
-    let index = rand_num % size_hint_low;
-    iter.nth(index).unwrap()
+    let rand_num = rng.rand_u64() as usize;
+    let index = rand_num % slot.len();
+    slot.iter().nth(index).unwrap()
+}
+
+fn choose_module_weighted(rng: &mut Rand64, slot: &BitVec, weights: &[f32]) -> u8 {
+    const MAX_LEN: usize = bitvec::MAX_LEN as usize;
+
+    assert!(slot.len() > 0);
+    assert!(weights.len() < bitvec::MAX_LEN as usize);
+
+    let mut cummulative_weight: f32 = 0.0;
+    let mut cummulative_weights: ArrayVec<f32, MAX_LEN> = ArrayVec::new();
+
+    for (i, weight) in weights.iter().enumerate() {
+        if slot.contains(cast_u8(i)) {
+            cummulative_weight += weight;
+        }
+
+        cummulative_weights.push(cummulative_weight);
+    }
+
+    let rand_num = rng.rand_float() as f32 * cummulative_weight;
+
+    todo!()
+
+    // let index = cummulative_weights.iter().enumerate().find_map(|(i, weight)| {
+
+    // });
+
+    // slot.iter().nth(index).unwrap()
 }
 
 pub fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
