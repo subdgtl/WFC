@@ -241,7 +241,7 @@ impl World {
 
         let index_base = self.module_count * position_to_index(self.slots.len(), self.dims, pos);
 
-        let module_weights = &mut self.slot_module_weights[index_base..self.module_count];
+        let module_weights = &mut self.slot_module_weights[index_base..index_base + self.module_count];
         module_weights.copy_from_slice(weights);
     }
 
