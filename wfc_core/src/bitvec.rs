@@ -33,37 +33,6 @@ impl BitVec {
         value != 0
     }
 
-    /// Returns the first set bit or [`None`].
-    pub fn first(&self) -> Option<u8> {
-        let len = self.data[3] >> 56;
-        if len == 0 {
-            None
-        } else {
-            let lz0 = self.data[0].leading_zeros();
-            if lz0 < 64 {
-                let first = lz0 as u8;
-                return Some(first);
-            }
-
-            let lz1 = self.data[1].leading_zeros();
-            if lz1 < 64 {
-                let first = 64 - 1 + lz1 as u8;
-                return Some(first);
-            }
-
-            let lz2 = self.data[2].leading_zeros();
-            if lz2 < 64 {
-                let first = 64 * 2 - 1 + lz2 as u8;
-                return Some(first);
-            }
-
-            let lz3 = (self.data[3] & DATA_MASK).leading_zeros();
-            let first = 64 * 3 - 1 + lz3 as u8;
-
-            Some(first)
-        }
-    }
-
     /// Sets a bit in the vector to one. Returns [`true`] if the bit was not
     /// previously set.
     pub fn add(&mut self, index: u8) -> bool {
