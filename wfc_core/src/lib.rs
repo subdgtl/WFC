@@ -631,7 +631,7 @@ impl World {
 }
 
 fn choose_slot(rng: &mut Rand64, slots: &[usize]) -> usize {
-    assert!(slots.len() > 0);
+    assert!(!slots.is_empty());
 
     let rand_num = rng.rand_u64() as usize;
     let index = rand_num % slots.len();

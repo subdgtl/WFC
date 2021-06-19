@@ -26,12 +26,12 @@ pub enum AdjacencyRuleKind {
     Z = 2,
 }
 
-impl Into<AdjacencyKind> for AdjacencyRuleKind {
-    fn into(self) -> AdjacencyKind {
-        match self {
-            Self::X => AdjacencyKind::X,
-            Self::Y => AdjacencyKind::Y,
-            Self::Z => AdjacencyKind::Z,
+impl From<AdjacencyRuleKind> for AdjacencyKind {
+    fn from(kind: AdjacencyRuleKind) -> Self {
+        match kind {
+            AdjacencyRuleKind::X => Self::X,
+            AdjacencyRuleKind::Y => Self::Y,
+            AdjacencyRuleKind::Z => Self::Z,
         }
     }
 }
@@ -44,12 +44,12 @@ pub struct AdjacencyRule {
     pub module_high: u8,
 }
 
-impl Into<Adjacency> for AdjacencyRule {
-    fn into(self) -> Adjacency {
-        Adjacency {
-            kind: self.kind.into(),
-            module_low: self.module_low,
-            module_high: self.module_high,
+impl From<AdjacencyRule> for Adjacency {
+    fn from(rule: AdjacencyRule) -> Self {
+        Self {
+            kind: rule.kind.into(),
+            module_low: rule.module_low,
+            module_high: rule.module_high,
         }
     }
 }
@@ -608,10 +608,7 @@ fn import_slot_module_weights(world: &mut World, slot_module_weights: &[f32]) {
     let [dim_x, dim_y, dim_z] = world.dims();
     let slot_count = usize::from(dim_x) * usize::from(dim_y) * usize::from(dim_z);
     let module_count = world.module_count();
-    assert_eq!(
-        slot_module_weights.len(),
-        usize::from(module_count) * slot_count,
-    );
+    assert_eq!(slot_module_weights.len(), module_count * slot_count);
 
     for (i, weights_chunk) in slot_module_weights.chunks_exact(module_count).enumerate() {
         let pos = wfc_core::index_to_position(slot_count, world.dims(), i);

@@ -222,6 +222,6 @@ fn parse_number_literal(input: &str) -> Result<u128, ParseIntError> {
     if input.starts_with("0x") || input.starts_with("0X") {
         u128::from_str_radix(&input[2..], 16)
     } else {
-        u128::from_str_radix(input, 10)
+        input.parse()
     }
 }
