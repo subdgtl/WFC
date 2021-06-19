@@ -217,8 +217,8 @@ void wfc_world_state_slots_get(WfcWorldStateHandle wfc_world_state_handle,
 /// `slot_module_weights_ptr` and `slot_module_weights_len` into the provided
 /// handle.
 ///
-/// The written weights will influence slot entropy computation for the slot
-/// they were written.
+/// The written weights will influence slot either entropy computation or module
+/// selection for the slot they were written, depending on the enabled features.
 ///
 /// The weights are stored in a four dimensional array (compacted in a one
 /// dimensional array). To get a slice of weights on position `[x, y, z]`, first

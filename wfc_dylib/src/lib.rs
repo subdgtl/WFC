@@ -9,9 +9,7 @@ mod convert;
 use std::mem;
 use std::slice;
 
-pub use wfc_core::Features;
-
-use wfc_core::{self, Adjacency, AdjacencyKind, Rng, World, WorldStatus};
+use wfc_core::{self, Adjacency, AdjacencyKind, Features, Rng, World, WorldStatus};
 
 use crate::convert::{cast_u8, cast_usize};
 
@@ -374,8 +372,8 @@ pub unsafe extern "C" fn wfc_world_state_slots_get(
 /// `slot_module_weights_ptr` and `slot_module_weights_len` into the provided
 /// handle.
 ///
-/// The written weights will influence slot entropy computation for the slot
-/// they were written.
+/// The written weights will influence slot either entropy computation or module
+/// selection for the slot they were written, depending on the enabled features.
 ///
 /// The weights are stored in a four dimensional array (compacted in a one
 /// dimensional array). To get a slice of weights on position `[x, y, z]`, first
