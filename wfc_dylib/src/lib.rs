@@ -9,6 +9,8 @@ mod convert;
 use std::mem;
 use std::slice;
 
+pub use wfc_core::Features;
+
 use wfc_core::{self, Adjacency, AdjacencyKind, Rng, World, WorldStatus};
 
 use crate::convert::{cast_u8, cast_usize};
@@ -81,12 +83,17 @@ pub extern "C" fn wfc_max_module_count_get() -> u32 {
 /// with adjacency rules. The world gets initialized with every module possible
 /// in every slot.
 ///
+/// Various [`Features`] can be enabled when creating the world. Attempting to
+/// use these features without enabling them here can result in unexpected behavior.
+///
 /// To change the world state to a different configuration, use
 /// [`wfc_world_state_slots_set`].
 ///
-/// Initially the world is configured to have uniform entropy computation
-/// weights for each module across all slots, but this can be customized with
-/// [`wfc_world_state_slot_module_weights_set`];
+/// Initially the world is configured to have uniform weights for each module
+/// across all slots, but this can be customized with
+/// [`wfc_world_state_slot_module_weights_set`]. These weights can be utilized
+/// either for slot entropy computation ([`Features::WEIGHTED_ENTROPY`]), or
+/// weighted slot observation ([`Features::WEIGHTED_OBSERVATION`]).
 ///
 /// # Safety
 ///
@@ -105,6 +112,8 @@ pub unsafe extern "C" fn wfc_world_state_init(
     world_x: u16,
     world_y: u16,
     world_z: u16,
+    // TODO(yan): Can cbindgen detect and pull docs from bitflags?
+    features: u32,
 ) -> WfcWorldStateInitResult {
     let adjacency_rules = {
         assert!(!adjacency_rules_ptr.is_null());
@@ -131,7 +140,8 @@ pub unsafe extern "C" fn wfc_world_state_init(
         .map(|adjacency_rule| (*adjacency_rule).into())
         .collect();
 
-    let world = World::new([world_x, world_y, world_z], adjacencies);
+    let world_features = Features::from_bits_truncate(features);
+    let world = World::new([world_x, world_y, world_z], adjacencies, world_features);
     let world_ptr = Box::into_raw(Box::new(world));
     let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
 

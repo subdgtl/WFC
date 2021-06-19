@@ -391,7 +391,8 @@ namespace wfc_gh
                                                              (UIntPtr)adjacencyRules.Length,
                                                              worldX,
                                                              worldY,
-                                                             worldZ);
+                                                             worldZ,
+                                                             0);
 
                     switch (result)
                     {
@@ -638,7 +639,8 @@ namespace wfc_gh
                                                                                    UIntPtr adjacency_rules_len,
                                                                                    ushort world_x,
                                                                                    ushort world_y,
-                                                                                   ushort world_z);
+                                                                                   ushort world_z,
+                                                                                   uint features);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_world_state_init_from(IntPtr* wfc_world_state_handle_ptr,

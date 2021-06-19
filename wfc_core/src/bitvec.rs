@@ -31,7 +31,38 @@ impl BitVec {
         value != 0
     }
 
-    /// Sets a bit in the vector to one. Returns `true` if the bit was not
+    /// Returns the first set bit or [`None`].
+    pub fn first(&self) -> Option<u8> {
+        let len = self.data[3] >> 56;
+        if len == 0 {
+            None
+        } else {
+            let lz0 = self.data[0].leading_zeros();
+            if lz0 < 64 {
+                let first = lz0 as u8;
+                return Some(first);
+            }
+
+            let lz1 = self.data[1].leading_zeros();
+            if lz1 < 64 {
+                let first = 64 - 1 + lz1 as u8;
+                return Some(first);
+            }
+
+            let lz2 = self.data[2].leading_zeros();
+            if lz2 < 64 {
+                let first = 64 * 2 - 1 + lz2 as u8;
+                return Some(first);
+            }
+
+            let lz3 = (self.data[3] & DATA_MASK).leading_zeros();
+            let first = 64 * 3 - 1 + lz3 as u8;
+
+            Some(first)
+        }
+    }
+
+    /// Sets a bit in the vector to one. Returns [`true`] if the bit was not
     /// previously set.
     pub fn add(&mut self, index: u8) -> bool {
         assert!(index < MAX_LEN);
@@ -51,7 +82,7 @@ impl BitVec {
         }
     }
 
-    /// Sets a bit in the vector to zero. Returns `true` if the bit was
+    /// Sets a bit in the vector to zero. Returns [`true`] if the bit was
     /// previously set.
     pub fn remove(&mut self, index: u8) -> bool {
         assert!(index < MAX_LEN);
@@ -118,6 +149,9 @@ impl<'a> Iterator for BitVecIterator<'a> {
     type Item = u8;
 
     fn next(&mut self) -> Option<u8> {
+        // TODO(yan): @Speed Try using leading zeros intrinsic to directly seek
+        // to the next element. Ideally do this in a BitVec::first_after
+        // function or similar.
         while self.next < MAX_LEN {
             let index = self.next;
 

@@ -9,7 +9,7 @@ use std::path::Path;
 use std::process;
 
 use clap::Clap as _;
-use wfc_core::{Rng, World, WorldStatus};
+use wfc_core::{Features, Rng, World, WorldStatus};
 
 // This is the same random seed wfc_gh will produce for its default seed.
 const DEFAULT_RANDOM_SEED: u128 = u128::from_le_bytes([
@@ -104,7 +104,7 @@ fn main() {
             }
         };
 
-        let mut world = World::new(dims, import_result.adjacencies);
+        let mut world = World::new(dims, import_result.adjacencies, Features::empty());
 
         let buf_reader = BufReader::new(world_state_file);
         if let Err(err) =
@@ -134,17 +134,8 @@ fn main() {
 
         world
     } else {
-        World::new(dims, import_result.adjacencies)
+        World::new(dims, import_result.adjacencies, Features::empty())
     };
-
-    // XXX
-    for x in 0..(dims[0] as u16) {
-        for y in 0..(dims[1] as u16) {
-            for z in 0..(dims[2] as u16) {
-                initial_world.set_slot_module_weights([x, y, z], &[0.1, 0.9]);
-            }
-        }
-    }
 
     let mut world = initial_world.clone();
 

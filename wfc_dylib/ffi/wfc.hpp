@@ -40,7 +40,7 @@ struct AdjacencyRule {
 
 /// An opaque handle to the PRNG state used by the Wave Function Collapse
 /// implementation. Actually a pointer, but shhh!
-using WfcRngStateHandle = Pcg32*;
+using WfcRngStateHandle = Rng*;
 
 extern "C" {
 
@@ -53,12 +53,17 @@ uint32_t wfc_max_module_count_get();
 /// with adjacency rules. The world gets initialized with every module possible
 /// in every slot.
 ///
+/// Various [`Features`] can be enabled when creating the world. Attempting to
+/// use these features without enabling them here can result in unexpected behavior.
+///
 /// To change the world state to a different configuration, use
 /// [`wfc_world_state_slots_set`].
 ///
-/// Initially the world is configured to have uniform entropy computation
-/// weights for each module across all slots, but this can be customized with
-/// [`wfc_world_state_slot_module_weights_set`];
+/// Initially the world is configured to have uniform weights for each module
+/// across all slots, but this can be customized with
+/// [`wfc_world_state_slot_module_weights_set`]. These weights can be utilized
+/// either for slot entropy computation ([`Features::WEIGHTED_ENTROPY`]), or
+/// weighted slot observation ([`Features::WEIGHTED_OBSERVATION`]).
 ///
 /// # Safety
 ///
@@ -74,7 +79,8 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
                                              uintptr_t adjacency_rules_len,
                                              uint16_t world_x,
                                              uint16_t world_y,
-                                             uint16_t world_z);
+                                             uint16_t world_z,
+                                             uint32_t features);
 
 /// Creates an instance of Wave Function Collapse world state as a copy of
 /// existing world state.
