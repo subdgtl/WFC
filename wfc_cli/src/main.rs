@@ -94,7 +94,7 @@ fn main() {
 
     let dims = [options.world_x, options.world_y, options.world_z];
 
-    let mut initial_world = if let Some(world_state_file_str) = options.world_state.as_ref() {
+    let initial_world = if let Some(world_state_file_str) = options.world_state.as_ref() {
         let world_state_file_path = Path::new(world_state_file_str);
         let world_state_file = match File::open(world_state_file_path) {
             Ok(file) => file,

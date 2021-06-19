@@ -695,7 +695,7 @@ fn choose_module_weighted(rng: &mut Rand64, slot: &BitVec, weights: &[f32]) -> u
         })
         .unwrap();
 
-    slot.iter().nth(index).unwrap()
+    cast_u8(index)
 }
 
 pub fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
