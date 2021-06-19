@@ -1,3 +1,5 @@
+use std::fmt;
+
 pub const MAX_LEN: u8 = u8::MAX - 8;
 
 const DATA_MASK: u64 = u64::MAX >> 8;
@@ -137,6 +139,16 @@ impl BitVec {
         len -= 1;
 
         self.data[3] = (self.data[3] & DATA_MASK) | (len << 56)
+    }
+}
+
+impl fmt::Binary for BitVec {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "[{:064b}][{:064b}][{:064b}][{:064b}]",
+            self.data[0], self.data[1], self.data[2], self.data[3],
+        )
     }
 }
 
