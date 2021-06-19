@@ -650,7 +650,7 @@ fn choose_module_weighted(rng: &mut Rand64, slot: &BitVec, weights: &[f32]) -> u
     const MAX_LEN: usize = bitvec::MAX_LEN as usize;
 
     assert!(slot.len() > 0);
-    assert!(weights.len() < bitvec::MAX_LEN as usize);
+    assert!(weights.len() <= bitvec::MAX_LEN as usize);
 
     // The following search over accumulated weights is ok and the unwraps
     // should never panic. This is because when we compute cummulative weights,
