@@ -349,6 +349,7 @@ impl World {
                     sum_weight_log_weights += weight * weight.ln();
                 }
 
+                // XXX: This needs high level validation!
                 assert!(sum_weights >= 0.0);
 
                 let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
