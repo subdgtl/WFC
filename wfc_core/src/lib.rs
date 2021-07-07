@@ -349,10 +349,10 @@ impl World {
                     sum_weight_log_weights += weight * weight.ln();
                 }
 
-                debug_assert!(sum_weights >= 0.0);
+                assert!(sum_weights >= 0.0);
 
                 let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
-                debug_assert!(!entropy.is_nan());
+                assert!(!entropy.is_nan());
 
                 entropy
             } else {
@@ -480,8 +480,8 @@ impl World {
 
                     let slot_len = slot.len();
                     let new_slot_len = new_slot.len();
-                    debug_assert!(slot_len > 0);
-                    debug_assert!(slot_len >= new_slot_len);
+                    assert!(slot_len > 0);
+                    assert!(slot_len >= new_slot_len);
 
                     self.slots[s.slot_index] = new_slot;
 
@@ -495,7 +495,7 @@ impl World {
                         // We didn't remove anything, stop propagating this branch
                         s.search_state = SearchState::Done;
                     } else {
-                        debug_assert!(slot_len > new_slot_len);
+                        assert!(slot_len > new_slot_len);
 
                         changed = true;
 
@@ -739,12 +739,12 @@ pub fn index_to_position(len: usize, dims: [u16; 3], index: usize) -> [u16; 3] {
 }
 
 fn prev_position_saturating(pos: u16, dim: u16) -> u16 {
-    debug_assert!(dim > 0);
+    assert!(dim > 0);
     pos.saturating_sub(1)
 }
 
 fn next_position_saturating(pos: u16, dim: u16) -> u16 {
-    debug_assert!(dim > 0);
+    assert!(dim > 0);
     pos.saturating_add(1).min(dim - 1)
 }
 
