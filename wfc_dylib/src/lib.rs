@@ -398,6 +398,9 @@ pub enum WfcWorldStateSlotModuleWeightsSetResult {
 /// slice by Z, then Y, then X. The lenght of the weight slice must be equal to
 /// the world's module count.
 ///
+/// The weights must be positive, normal (non-zero, not infinite, not NaN)
+/// floating point numbers.
+///
 /// # Safety
 ///
 /// Behavior is undefined if any of the following conditions are violated:
