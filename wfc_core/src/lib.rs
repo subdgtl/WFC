@@ -1,4 +1,5 @@
 mod bitvec;
+mod constbitvec;
 mod convert;
 
 use std::cmp::Ordering;
@@ -153,12 +154,20 @@ impl Rng {
     }
 }
 
+enum Slots {
+    Block1(Vec<constbitvec::BitVec<1>>),
+    Block2(Vec<constbitvec::BitVec<2>>),
+    Block4(Vec<constbitvec::BitVec<4>>),
+    Block8(Vec<constbitvec::BitVec<8>>),
+}
+
 #[derive(Clone)]
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
     features: Features,
 
+    // XXX: enum { BitVec1(Vec<BitVec<1>>), BitVec2(Vec<BitVec<2>>) }
     slots: Vec<BitVec>,
     slot_module_weights: Option<Vec<f32>>,
     module_count: usize,
