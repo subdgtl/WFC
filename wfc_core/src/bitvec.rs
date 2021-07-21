@@ -1,7 +1,5 @@
 use std::fmt;
 
-pub const MAX_LEN: u8 = u8::MAX - 8;
-
 const DATA_MASK: u64 = u64::MAX >> 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,6 +14,8 @@ pub struct BitVec {
 }
 
 impl BitVec {
+    pub const MAX_LEN: u8 = u8::MAX - 8;
+
     /// Creates a new bit vector with all bits set to zero.
     pub const fn zeros() -> Self {
         Self { data: [0; 4] }
@@ -23,7 +23,7 @@ impl BitVec {
 
     /// Returns whether the bit vector has a bit set.
     pub fn contains(&self, index: u8) -> bool {
-        assert!(index < MAX_LEN);
+        assert!(index < Self::MAX_LEN);
         let index = usize::from(index);
 
         let blk_index = index / 64;
@@ -36,7 +36,7 @@ impl BitVec {
     /// Sets a bit in the vector to one. Returns [`true`] if the bit was not
     /// previously set.
     pub fn add(&mut self, index: u8) -> bool {
-        assert!(index < MAX_LEN);
+        assert!(index < Self::MAX_LEN);
         let index = usize::from(index);
 
         let blk_index = index / 64;
@@ -56,7 +56,7 @@ impl BitVec {
     /// Sets a bit in the vector to zero. Returns [`true`] if the bit was
     /// previously set.
     pub fn remove(&mut self, index: u8) -> bool {
-        assert!(index < MAX_LEN);
+        assert!(index < Self::MAX_LEN);
         let index = usize::from(index);
 
         let blk_index = index / 64;
@@ -94,7 +94,7 @@ impl BitVec {
 
     fn inc_len(&mut self) {
         let mut len = self.data[3] >> 56;
-        assert!(len < MAX_LEN as u64);
+        assert!(len < Self::MAX_LEN as u64);
 
         len += 1;
 
@@ -133,7 +133,7 @@ impl<'a> Iterator for BitVecIterator<'a> {
         // TODO(yan): @Speed Try using leading zeros intrinsic to directly seek
         // to the next element. Ideally do this in a BitVec::first_after
         // function or similar.
-        while self.next < MAX_LEN {
+        while self.next < BitVec::MAX_LEN {
             let index = self.next;
 
             let contains = self.bitvec.contains(index);

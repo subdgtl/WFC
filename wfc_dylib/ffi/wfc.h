@@ -24,6 +24,12 @@ enum WfcWorldStateInitResult {
 };
 typedef uint32_t WfcWorldStateInitResult;
 
+enum WfcWorldStateSlotModuleWeightsSetResult {
+  Ok = 0,
+  ErrNotNormalPositive = 1,
+};
+typedef uint32_t WfcWorldStateSlotModuleWeightsSetResult;
+
 enum WfcWorldStateSlotsSetResult {
   Ok = 0,
   OkWorldNotCanonical = 1,
@@ -54,7 +60,19 @@ typedef Rng *WfcRngStateHandle;
  * [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
  * implementation.
  */
-uint32_t wfc_max_module_count_get(void);
+uint32_t wfc_query_max_module_count(void);
+
+/**
+ * Slot entropy calculation utilizes weights. Will allocate memory for weights
+ * if enabled.
+ */
+uint32_t wfc_feature_weighted_entropy(void);
+
+/**
+ * Module selection during observation performs weighted random. Will allocate
+ * memory for weights if enabled.
+ */
+uint32_t wfc_feature_weighted_observation(void);
 
 /**
  * Creates an instance of Wave Function Collapse world state and initializes it
@@ -257,9 +275,9 @@ void wfc_world_state_slots_get(WfcWorldStateHandle wfc_world_state_handle,
  * - `slot_module_weights_ptr` and `slot_module_weights_len` are used to
  *   construct a slice. See [`std::slice::from_raw_parts`].
  */
-void wfc_world_state_slot_module_weights_set(WfcWorldStateHandle wfc_world_state_handle,
-                                             const float *slot_module_weights_ptr,
-                                             uintptr_t slot_module_weights_len);
+WfcWorldStateSlotModuleWeightsSetResult wfc_world_state_slot_module_weights_set(WfcWorldStateHandle wfc_world_state_handle,
+                                                                                const float *slot_module_weights_ptr,
+                                                                                uintptr_t slot_module_weights_len);
 
 /**
  * Creates an instance of pseudo-random number generator and initializes it

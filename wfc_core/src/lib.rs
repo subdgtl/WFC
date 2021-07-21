@@ -1,18 +1,20 @@
 mod bitvec;
 mod convert;
 
+
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
 use arrayvec::ArrayVec;
-use bitflags::bitflags;
 use fxhash::FxBuildHasher;
 use oorandom::Rand64;
 
 use crate::bitvec::BitVec;
 use crate::convert::cast_u8;
+
+pub const MAX_MODULE_COUNT: u32 = BitVec::MAX_LEN as u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -41,17 +43,40 @@ pub struct Adjacency {
     pub module_high: u8,
 }
 
-bitflags! {
-    /// Solver ([`World`]) features that have to be explicitly enabled when
-    /// initializing.
-    #[repr(C)]
-    pub struct Features: u32 {
-        /// Slot entropy calculation utilizes weights. Will allocate memory for
-        /// weights if enabled.
-        const WEIGHTED_ENTROPY     = 0x01;
-        /// Module selection during observation performs weighted random. Will
-        /// allocate memory for weights if enabled.
-        const WEIGHTED_OBSERVATION = 0x02;
+/// Solver ([`World`]) features that have to be explicitly enabled when
+/// initializing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Features(u32);
+
+impl Features {
+    /// Slot entropy calculation utilizes weights. Will allocate memory for
+    /// weights if enabled.
+    pub const WEIGHTED_ENTROPY: Self = Self(0x01);
+
+    /// Module selection during observation performs weighted random. Will
+    /// allocate memory for weights if enabled.
+    pub const WEIGHTED_OBSERVATION: Self = Self(0x02);
+
+    pub const fn into_bits(self) -> u32 {
+        self.0
+    }
+
+    pub const fn from_bits_truncate(raw: u32) -> Self {
+        const ALL: u32 = 0x01 | 0x02;
+        Self(raw & ALL)
+    }
+
+    pub fn contains_any_weighted(&self) -> bool {
+        const ALL_WEIGHTED: u32 = 0x01 | 0x02;
+        self.0 & ALL_WEIGHTED > 0
+    }
+
+    pub fn has_weighted_entropy(&self) -> bool {
+        self.0 & Self::WEIGHTED_ENTROPY.0 > 0
+    }
+
+    pub fn has_weighted_observation(&self) -> bool {
+        self.0 & Self::WEIGHTED_OBSERVATION.0 > 0
     }
 }
 
@@ -154,8 +179,8 @@ impl World {
         let mut module_max: u8 = 0;
 
         for adjacency in &adjacencies {
-            assert!(adjacency.module_low < bitvec::MAX_LEN);
-            assert!(adjacency.module_high < bitvec::MAX_LEN);
+            assert!(adjacency.module_low < BitVec::MAX_LEN);
+            assert!(adjacency.module_high < BitVec::MAX_LEN);
 
             if modules.add(adjacency.module_low) {
                 module_count += 1;
@@ -183,8 +208,7 @@ impl World {
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
         let slots = vec![modules; slot_count];
 
-        let weighted_features = Features::WEIGHTED_ENTROPY | Features::WEIGHTED_OBSERVATION;
-        let slot_module_weights = if features.intersects(weighted_features) {
+        let slot_module_weights = if features.contains_any_weighted() {
             Some(vec![1.0; slot_count * module_count])
         } else {
             None
@@ -351,7 +375,7 @@ impl World {
                 continue;
             }
 
-            let entropy = if self.features.contains(Features::WEIGHTED_ENTROPY) {
+            let entropy = if self.features.has_weighted_entropy() {
                 let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
                 let mut sum_weights = 0.0;
                 let mut sum_weight_log_weights = 0.0;
@@ -362,7 +386,6 @@ impl World {
                     sum_weight_log_weights += weight * weight.ln();
                 }
 
-                // XXX: This needs high level validation!
                 assert!(sum_weights >= 0.0);
 
                 let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
@@ -397,7 +420,7 @@ impl World {
 
             // Pick a random module to materialize and remove other
             // possibilities from the slot.
-            let chosen_module = if self.features.contains(Features::WEIGHTED_OBSERVATION) {
+            let chosen_module = if self.features.has_weighted_observation() {
                 let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
                 let index_base = self.module_count * min_entropy_slot_index;
                 let weights = &slot_module_weights[index_base..index_base + self.module_count];
@@ -661,10 +684,10 @@ fn choose_module(rng: &mut Rand64, slot: &BitVec) -> u8 {
 }
 
 fn choose_module_weighted(rng: &mut Rand64, slot: &BitVec, weights: &[f32]) -> u8 {
-    const MAX_LEN: usize = bitvec::MAX_LEN as usize;
+    const MAX_LEN: usize = BitVec::MAX_LEN as usize;
 
     assert!(slot.len() > 0);
-    assert!(weights.len() <= bitvec::MAX_LEN as usize);
+    assert!(weights.len() <= MAX_LEN);
 
     // The following search over accumulated weights is ok and the unwraps
     // should never panic. This is because when we compute cummulative weights,

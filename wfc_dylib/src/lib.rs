@@ -9,12 +9,11 @@ mod convert;
 use std::mem;
 use std::slice;
 
-use wfc_core::{self, Adjacency, AdjacencyKind, Features, Rng, World, WorldStatus};
+use wfc_core::{
+    self, Adjacency, AdjacencyKind, Features, Rng, World, WorldStatus, MAX_MODULE_COUNT,
+};
 
 use crate::convert::{cast_u8, cast_usize};
-
-// Note: Volatile! It has to be the same as bitvec::MAX_LEN.
-const MAX_MODULE_COUNT: u32 = 256 - 8;
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -66,8 +65,22 @@ pub struct WfcRngStateHandle(*mut Rng);
 /// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
 /// implementation.
 #[no_mangle]
-pub extern "C" fn wfc_max_module_count_get() -> u32 {
+pub extern "C" fn wfc_query_max_module_count() -> u32 {
     MAX_MODULE_COUNT
+}
+
+/// Slot entropy calculation utilizes weights. Will allocate memory for weights
+/// if enabled.
+#[no_mangle]
+pub extern "C" fn wfc_feature_weighted_entropy() -> u32 {
+    Features::WEIGHTED_ENTROPY.into_bits()
+}
+
+/// Module selection during observation performs weighted random. Will allocate
+/// memory for weights if enabled.
+#[no_mangle]
+pub extern "C" fn wfc_feature_weighted_observation() -> u32 {
+    Features::WEIGHTED_OBSERVATION.into_bits()
 }
 
 #[repr(u32)]
@@ -110,7 +123,6 @@ pub unsafe extern "C" fn wfc_world_state_init(
     world_x: u16,
     world_y: u16,
     world_z: u16,
-    // TODO(yan): Can cbindgen detect and pull docs from bitflags?
     features: u32,
 ) -> WfcWorldStateInitResult {
     let adjacency_rules = {

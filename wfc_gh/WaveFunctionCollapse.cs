@@ -637,7 +637,13 @@ namespace wfc_gh
     internal class Native
     {
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static extern uint wfc_max_module_count_get();
+        internal static extern uint wfc_query_max_module_count();
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_feature_weighted_entropy();
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_feature_weighted_observation();
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern WfcWorldStateInitResult wfc_world_state_init(IntPtr* wfc_world_state_handle_ptr,
