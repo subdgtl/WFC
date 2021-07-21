@@ -18,9 +18,8 @@ namespace wfc_gh
         private const int IN_PARAM_WORLD_SIZE = 3;
         private const int IN_PARAM_WORLD_SLOT_POSITION = 4;
         private const int IN_PARAM_WORLD_SLOT_MODULE = 5;
-        private const int IN_PARAM_ENTROPY = 6;
-        private const int IN_PARAM_RANDOM_SEED = 7;
-        private const int IN_PARAM_MAX_ATTEMPTS = 8;
+        private const int IN_PARAM_RANDOM_SEED = 6;
+        private const int IN_PARAM_MAX_ATTEMPTS = 7;
 
         private const int OUT_PARAM_DEBUG_OUTPUT = 0;
         private const int OUT_PARAM_WORLD_SLOT_POSITION = 1;
@@ -74,12 +73,6 @@ namespace wfc_gh
                                       "SM",
                                       "A list of string identifiers defining modules to add to slots at position from SP. Zipped with SP. A module can occur multiple times in this list, each adding the module at the corresponging SP position.",
                                       GH_ParamAccess.list);
-
-            pManager.AddBooleanParameter("Use Shannon Entropy",
-                                         "E",
-                                         "Whether to use Shannon Entropy instead of the simpler linear entropy calculations",
-                                         GH_ParamAccess.item,
-                                         false);
 
             pManager.AddIntegerParameter("Random seed",
                                          "S",
@@ -139,7 +132,7 @@ namespace wfc_gh
 
             // Check ahead of time, if there are at most maxModuleCount modules
             // altogether in the input.
-            uint maxModuleCount = Native.wfc_max_module_count_get();
+            uint maxModuleCount = Native.wfc_query_max_module_count();
             {
                 HashSet<string> allModules = new HashSet<string>();
 
@@ -346,18 +339,6 @@ namespace wfc_gh
             }
 
             //
-            // -- Entropy --
-            //
-
-            bool useShannonEntropy = false;
-            DA.GetData(IN_PARAM_ENTROPY, ref useShannonEntropy);
-
-            Entropy entropy = Entropy.Linear;
-            if (useShannonEntropy) {
-                entropy = Entropy.Shannon;
-            }
-
-            //
             // -- Random seed --
             //
             // wfc_rng_state_init needs 128 bits worth of random seed, but that
@@ -411,7 +392,7 @@ namespace wfc_gh
                                                              worldX,
                                                              worldY,
                                                              worldZ,
-                                                             entropy);
+                                                             0);
 
                     switch (result)
                     {
@@ -465,7 +446,7 @@ namespace wfc_gh
             uint attempts = 0;
             uint maxObservations = UInt32.MaxValue;
             uint spentObservations = 0;
-            
+
             unsafe{
                 while (true)
                 {
@@ -574,12 +555,6 @@ namespace wfc_gh
         public byte module_high;
     }
 
-    internal enum Entropy : uint
-    {
-        Linear = 0,
-        Shannon = 1,
-    }
-
     internal enum WfcWorldStateInitResult : uint
     {
         Ok = 0,
@@ -592,6 +567,12 @@ namespace wfc_gh
         Ok = 0,
         OkWorldNotCanonical = 1,
         ErrWorldContradictory = 2,
+    }
+
+    internal enum WfcWorldStateSlotModuleWeightsSetResult : uint
+    {
+        Ok = 0,
+        ErrNotNormalPositive = 1,
     }
 
     internal enum WfcObserveResult: uint {
@@ -656,7 +637,13 @@ namespace wfc_gh
     internal class Native
     {
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static extern uint wfc_max_module_count_get();
+        internal static extern uint wfc_query_max_module_count();
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_feature_weighted_entropy();
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_feature_weighted_observation();
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern WfcWorldStateInitResult wfc_world_state_init(IntPtr* wfc_world_state_handle_ptr,
@@ -665,7 +652,7 @@ namespace wfc_gh
                                                                                    ushort world_x,
                                                                                    ushort world_y,
                                                                                    ushort world_z,
-                                                                                   Entropy entropy);
+                                                                                   uint features);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_world_state_init_from(IntPtr* wfc_world_state_handle_ptr,
@@ -689,6 +676,11 @@ namespace wfc_gh
                                                                      UIntPtr slots_len);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcWorldStateSlotModuleWeightsSetResult wfc_world_state_slot_module_weights_set(IntPtr wfc_world_state_handle,
+                                                                                                                      float* slot_module_weights_ptr,
+                                                                                                                      UIntPtr slot_module_weights_len);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
                                                               ulong rng_seed_low,
                                                               ulong rng_seed_high);
@@ -700,7 +692,7 @@ namespace wfc_gh
         internal static unsafe extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
                                                             IntPtr wfc_rng_state_handle,
                                                             uint max_observations,
-                                                            uint* observationsSpent);
+                                                            uint* spent_observations);
     }
 
 }

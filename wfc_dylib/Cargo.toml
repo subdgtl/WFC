@@ -9,5 +9,4 @@ name = "wfc"
 crate-type = ["cdylib"]
 
 [dependencies]
-rand_pcg = "0.2.1"
 wfc_core = { path = "../wfc_core" }

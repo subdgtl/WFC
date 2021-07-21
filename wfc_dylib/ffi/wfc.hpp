@@ -10,11 +10,6 @@ enum class AdjacencyRuleKind : uint32_t {
   Z = 2,
 };
 
-enum class Entropy : uint32_t {
-  Linear = 0,
-  Shannon = 1,
-};
-
 enum class WfcObserveResult : uint32_t {
   Deterministic = 0,
   Contradiction = 1,
@@ -25,6 +20,11 @@ enum class WfcWorldStateInitResult : uint32_t {
   Ok = 0,
   ErrTooManyModules = 1,
   ErrWorldDimensionsZero = 2,
+};
+
+enum class WfcWorldStateSlotModuleWeightsSetResult : uint32_t {
+  Ok = 0,
+  ErrNotNormalPositive = 1,
 };
 
 enum class WfcWorldStateSlotsSetResult : uint32_t {
@@ -45,21 +45,38 @@ struct AdjacencyRule {
 
 /// An opaque handle to the PRNG state used by the Wave Function Collapse
 /// implementation. Actually a pointer, but shhh!
-using WfcRngStateHandle = Pcg32*;
+using WfcRngStateHandle = Rng*;
 
 extern "C" {
 
 /// Returns the maximum module count supported to be sent with
 /// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
 /// implementation.
-uint32_t wfc_max_module_count_get();
+uint32_t wfc_query_max_module_count();
+
+/// Slot entropy calculation utilizes weights. Will allocate memory for weights
+/// if enabled.
+uint32_t wfc_feature_weighted_entropy();
+
+/// Module selection during observation performs weighted random. Will allocate
+/// memory for weights if enabled.
+uint32_t wfc_feature_weighted_observation();
 
 /// Creates an instance of Wave Function Collapse world state and initializes it
 /// with adjacency rules. The world gets initialized with every module possible
 /// in every slot.
 ///
+/// Various [`Features`] can be enabled when creating the world. Attempting to
+/// use these features without enabling them here can result in unexpected behavior.
+///
 /// To change the world state to a different configuration, use
 /// [`wfc_world_state_slots_set`].
+///
+/// Initially the world is configured to have uniform weights for each module
+/// across all slots, but this can be customized with
+/// [`wfc_world_state_slot_module_weights_set`]. These weights can be utilized
+/// either for slot entropy computation ([`Features::WEIGHTED_ENTROPY`]), or
+/// weighted slot observation ([`Features::WEIGHTED_OBSERVATION`]).
 ///
 /// # Safety
 ///
@@ -76,7 +93,7 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
                                              uint16_t world_x,
                                              uint16_t world_y,
                                              uint16_t world_z,
-                                             Entropy entropy);
+                                             uint32_t features);
 
 /// Creates an instance of Wave Function Collapse world state as a copy of
 /// existing world state.
@@ -208,6 +225,36 @@ WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_wo
 void wfc_world_state_slots_get(WfcWorldStateHandle wfc_world_state_handle,
                                uint64_t (*slots_ptr)[4],
                                uintptr_t slots_len);
+
+/// Writes Wave Function Collapse module weights for each slot from
+/// `slot_module_weights_ptr` and `slot_module_weights_len` into the provided
+/// handle.
+///
+/// The written weights will influence slot either entropy computation or module
+/// selection for the slot they were written, depending on the enabled features.
+///
+/// The weights are stored in a four dimensional array (compacted in a one
+/// dimensional array). To get a slice of weights on position `[x, y, z]`, first
+/// slice by Z, then Y, then X. The lenght of the weight slice must be equal to
+/// the world's module count.
+///
+/// The weights must be positive, normal (non-zero, not infinite, not NaN)
+/// floating point numbers.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
+///
+/// - `slot_module_weights_ptr` and `slot_module_weights_len` are used to
+///   construct a slice. See [`std::slice::from_raw_parts`].
+WfcWorldStateSlotModuleWeightsSetResult wfc_world_state_slot_module_weights_set(WfcWorldStateHandle wfc_world_state_handle,
+                                                                                const float *slot_module_weights_ptr,
+                                                                                uintptr_t slot_module_weights_len);
 
 /// Creates an instance of pseudo-random number generator and initializes it
 /// with the provided seed.

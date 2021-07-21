@@ -1,20 +1,19 @@
 mod bitvec;
 mod convert;
 
-pub use rand_core;
-
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt;
 
+use arrayvec::ArrayVec;
 use fxhash::FxBuildHasher;
-use lru::LruCache;
+use oorandom::Rand64;
 
 use crate::bitvec::BitVec;
 use crate::convert::cast_u8;
 
-const LRU_SIZE: usize = 32;
+pub const MAX_MODULE_COUNT: u32 = BitVec::MAX_LEN as u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -41,6 +40,47 @@ pub struct Adjacency {
     pub kind: AdjacencyKind,
     pub module_low: u8,
     pub module_high: u8,
+}
+
+/// Solver ([`World`]) features that have to be explicitly enabled when
+/// initializing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Features(u32);
+
+impl Features {
+    /// Slot entropy calculation utilizes weights. Will allocate memory for
+    /// weights if enabled.
+    pub const WEIGHTED_ENTROPY: Self = Self(0x01);
+
+    /// Module selection during observation performs weighted random. Will
+    /// allocate memory for weights if enabled.
+    pub const WEIGHTED_OBSERVATION: Self = Self(0x02);
+
+    pub const fn into_bits(self) -> u32 {
+        self.0
+    }
+
+    pub const fn from_bits_truncate(raw: u32) -> Self {
+        const ALL: u32 = 0x01 | 0x02;
+        Self(raw & ALL)
+    }
+
+    pub const fn empty() -> Self {
+        Self(0)
+    }
+
+    pub fn contains_any_weighted(&self) -> bool {
+        const ALL_WEIGHTED: u32 = 0x01 | 0x02;
+        self.0 & ALL_WEIGHTED > 0
+    }
+
+    pub fn has_weighted_entropy(&self) -> bool {
+        self.0 & Self::WEIGHTED_ENTROPY.0 > 0
+    }
+
+    pub fn has_weighted_observation(&self) -> bool {
+        self.0 & Self::WEIGHTED_OBSERVATION.0 > 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,24 +143,33 @@ impl fmt::Display for WorldStatus {
     }
 }
 
+// Note: We could have used Rand32, but world position is up to 48 bits, so we
+// use 64 bit RNG.
+pub struct Rng(Rand64);
+
+impl Rng {
+    pub fn new(seed: u128) -> Self {
+        Self(Rand64::new(seed))
+    }
+}
+
+#[derive(Clone)]
 pub struct World {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
-    use_shannon_entropy: bool,
+    features: Features,
 
     slots: Vec<BitVec>,
+    slot_module_weights: Option<Vec<f32>>,
     module_count: usize,
-    module_weights: Vec<f32>,
 
     /// Working memory for picking the nondeterministic slot with smallest
     /// entropy. Pre-allocated to maximum capacity.
     min_entropy_slots: Vec<usize>,
-    /// Working memory for computed slot entropies.
-    slot_entropy_lru: LruCache<BitVec, f32, FxBuildHasher>,
 }
 
 impl World {
-    pub fn new(dims: [u16; 3], adjacencies: Vec<Adjacency>, use_shannon_entropy: bool) -> Self {
+    pub fn new(dims: [u16; 3], adjacencies: Vec<Adjacency>, features: Features) -> Self {
         // TODO(yan): Error handling. Do not unwind across FFI.
         assert!(dims[0] > 0);
         assert!(dims[1] > 0);
@@ -133,8 +182,8 @@ impl World {
         let mut module_max: u8 = 0;
 
         for adjacency in &adjacencies {
-            assert!(adjacency.module_low < bitvec::MAX_LEN);
-            assert!(adjacency.module_high < bitvec::MAX_LEN);
+            assert!(adjacency.module_low < BitVec::MAX_LEN);
+            assert!(adjacency.module_high < BitVec::MAX_LEN);
 
             if modules.add(adjacency.module_low) {
                 module_count += 1;
@@ -162,30 +211,34 @@ impl World {
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
         let slots = vec![modules; slot_count];
 
-        let mut module_weights = vec![0.0; module_count];
-        for adjacency in &adjacencies {
-            module_weights[usize::from(adjacency.module_low)] += 1.0;
-            module_weights[usize::from(adjacency.module_high)] += 1.0;
-        }
+        let slot_module_weights = if features.contains_any_weighted() {
+            Some(vec![1.0; slot_count * module_count])
+        } else {
+            None
+        };
 
         Self {
             dims,
             adjacencies,
-            use_shannon_entropy,
+            features,
 
             slots,
+            slot_module_weights,
             module_count,
-            module_weights,
 
             min_entropy_slots: Vec::with_capacity(slot_count),
-            slot_entropy_lru: LruCache::with_hasher(LRU_SIZE, FxBuildHasher::default()),
         }
     }
 
     pub fn clone_from(&mut self, other: &World) {
         self.dims = other.dims;
         self.adjacencies.clone_from(&other.adjacencies);
+        self.features = other.features;
+
         self.slots.clone_from(&other.slots);
+        self.slot_module_weights
+            .clone_from(&other.slot_module_weights);
+
         self.module_count = other.module_count;
     }
 
@@ -239,6 +292,32 @@ impl World {
         slot.iter()
     }
 
+    /// Sets weights for a module.
+    ///
+    /// Computations running on the weights require them to be normal, positive
+    /// floats (not zero, not infinite, not NaN, not subnormal and sign
+    /// positive).
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the weights is not a normal ([`f32::is_normal`]),
+    /// positive ([`f32::is_sign_positive`]) number.
+    pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
+        assert_eq!(weights.len(), self.module_count);
+        for weight in weights {
+            assert!(weight.is_normal() && weight.is_sign_positive());
+        }
+
+        if let Some(slot_module_weights) = &mut self.slot_module_weights {
+            let index_base =
+                self.module_count * position_to_index(self.slots.len(), self.dims, pos);
+
+            let module_weights =
+                &mut slot_module_weights[index_base..index_base + self.module_count];
+            module_weights.copy_from_slice(weights);
+        }
+    }
+
     /// Resets the world to initial state, where every slot has the possibility
     /// to contain any module.
     pub fn reset(&mut self) {
@@ -283,7 +362,7 @@ impl World {
         (world_changed, self.world_status())
     }
 
-    pub fn observe<R: rand_core::RngCore>(&mut self, rng: &mut R) -> (bool, WorldStatus) {
+    pub fn observe(&mut self, rng: &mut Rng) -> (bool, WorldStatus) {
         let mut min_entropy = f32::INFINITY;
         self.min_entropy_slots.clear();
 
@@ -299,27 +378,23 @@ impl World {
                 continue;
             }
 
-            let entropy = if self.use_shannon_entropy {
-                if let Some(entropy) = self.slot_entropy_lru.get(slot) {
-                    *entropy
-                } else {
-                    let mut sum_weights = 0.0;
-                    let mut sum_weight_log_weights = 0.0;
-                    for module in slot {
-                        let weight = self.module_weights[usize::from(module)];
-                        sum_weights += weight;
-                        sum_weight_log_weights += weight * weight.ln();
-                    }
-
-                    debug_assert!(sum_weights >= 0.0);
-
-                    let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
-                    debug_assert!(!entropy.is_nan());
-
-                    self.slot_entropy_lru.put(*slot, entropy);
-
-                    entropy
+            let entropy = if self.features.has_weighted_entropy() {
+                let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
+                let mut sum_weights = 0.0;
+                let mut sum_weight_log_weights = 0.0;
+                for module in slot {
+                    let weight_index = self.module_count * i + usize::from(module);
+                    let weight = slot_module_weights[weight_index];
+                    sum_weights += weight;
+                    sum_weight_log_weights += weight * weight.ln();
                 }
+
+                assert!(sum_weights >= 0.0);
+
+                let entropy = sum_weights.ln() - sum_weight_log_weights / sum_weights;
+                assert!(!entropy.is_nan());
+
+                entropy
             } else {
                 slot_len as f32
             };
@@ -341,12 +416,22 @@ impl World {
         if self.min_entropy_slots.is_empty() {
             (false, WorldStatus::Deterministic)
         } else {
-            let min_entropy_slot_index = choose_random(self.min_entropy_slots.iter().copied(), rng);
+            let rand64 = &mut rng.0;
+
+            let min_entropy_slot_index = choose_slot(rand64, &self.min_entropy_slots);
             let min_entropy_slot = &mut self.slots[min_entropy_slot_index];
 
             // Pick a random module to materialize and remove other
             // possibilities from the slot.
-            let chosen_module = choose_random(min_entropy_slot.iter(), rng);
+            let chosen_module = if self.features.has_weighted_observation() {
+                let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
+                let index_base = self.module_count * min_entropy_slot_index;
+                let weights = &slot_module_weights[index_base..index_base + self.module_count];
+
+                choose_module_weighted(rand64, &min_entropy_slot, weights)
+            } else {
+                choose_module(rand64, &min_entropy_slot)
+            };
 
             min_entropy_slot.clear();
             min_entropy_slot.add(chosen_module);
@@ -435,8 +520,8 @@ impl World {
 
                     let slot_len = slot.len();
                     let new_slot_len = new_slot.len();
-                    debug_assert!(slot_len > 0);
-                    debug_assert!(slot_len >= new_slot_len);
+                    assert!(slot_len > 0);
+                    assert!(slot_len >= new_slot_len);
 
                     self.slots[s.slot_index] = new_slot;
 
@@ -450,7 +535,7 @@ impl World {
                         // We didn't remove anything, stop propagating this branch
                         s.search_state = SearchState::Done;
                     } else {
-                        debug_assert!(slot_len > new_slot_len);
+                        assert!(slot_len > new_slot_len);
 
                         changed = true;
 
@@ -585,43 +670,72 @@ impl World {
     }
 }
 
-/// Manual [`Clone`] impl, because [`LruCache`] does not impl [`Clone`].
-impl Clone for World {
-    fn clone(&self) -> Self {
-        Self {
-            dims: self.dims,
-            adjacencies: self.adjacencies.clone(),
-            use_shannon_entropy: self.use_shannon_entropy,
+fn choose_slot(rng: &mut Rand64, slots: &[usize]) -> usize {
+    assert!(!slots.is_empty());
 
-            slots: self.slots.clone(),
-            module_count: self.module_count,
-            module_weights: self.module_weights.clone(),
-
-            min_entropy_slots: Vec::with_capacity(self.min_entropy_slots.len()),
-            slot_entropy_lru: LruCache::with_hasher(LRU_SIZE, FxBuildHasher::default()),
-        }
-    }
+    let rand_num = rng.rand_u64() as usize;
+    let index = rand_num % slots.len();
+    slots[index]
 }
 
-fn choose_random<I, T, R>(mut iter: I, rng: &mut R) -> T
-where
-    I: Iterator<Item = T>,
-    R: rand_core::RngCore,
-{
-    let (size_hint_low, size_hint_high) = iter.size_hint();
+fn choose_module(rng: &mut Rand64, slot: &BitVec) -> u8 {
+    assert!(slot.len() > 0);
 
-    // Make sure whatever iterator we passed in has reasonable size hints.
-    debug_assert!(size_hint_low > 0);
-    debug_assert_eq!(Some(size_hint_low), size_hint_high);
+    let rand_num = rng.rand_u64() as usize;
+    let index = rand_num % slot.len();
+    slot.iter().nth(index).unwrap()
+}
 
-    // Take 64 bits of random and possibly truncate when casting to usize on
-    // non-64bit platforms.
-    let rand_num = rng.next_u64() as usize;
+fn choose_module_weighted(rng: &mut Rand64, slot: &BitVec, weights: &[f32]) -> u8 {
+    const MAX_LEN: usize = BitVec::MAX_LEN as usize;
 
-    // TODO(yan): @Correctness How should we correctly create the index from the
-    // random number to preserve the uniformity of the sampled distribution?
-    let index = rand_num % size_hint_low;
-    iter.nth(index).unwrap()
+    assert!(slot.len() > 0);
+    assert!(weights.len() <= MAX_LEN);
+
+    // The following search over accumulated weights is ok and the unwraps
+    // should never panic. This is because when we compute cummulative weights,
+    // we don't increment the value unless there is a module present in the
+    // slot, and our assert at the top tells us there is at least one module
+    // present. This means we should eventually find a module for which our
+    // random number selects the weight.
+    //
+    // Additionally, because absent modules don't increment the cummulative
+    // weight, we know that they are "shadowed" by previously visited present
+    // modules, and therefore can't be selected. However, if the first module is
+    // absent *and* the RNG rolls zero, we could incorrectly select it. For this
+    // reason, we track whether we have already visited a present module.
+
+    let mut cummulative_weight: f32 = 0.0;
+    let mut cummulative_weights: ArrayVec<f32, MAX_LEN> = ArrayVec::new();
+
+    for (i, weight) in weights.iter().enumerate() {
+        if slot.contains(cast_u8(i)) {
+            cummulative_weight += weight;
+        }
+
+        let value = if cummulative_weight == 0.0 {
+            -1.0
+        } else {
+            cummulative_weight
+        };
+
+        cummulative_weights.push(value);
+    }
+
+    let rand_num = rng.rand_float() as f32 * cummulative_weight;
+    let index = cummulative_weights
+        .iter()
+        .enumerate()
+        .find_map(|(i, cummulative_weight)| {
+            if rand_num <= *cummulative_weight {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+
+    cast_u8(index)
 }
 
 pub fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
@@ -665,12 +779,12 @@ pub fn index_to_position(len: usize, dims: [u16; 3], index: usize) -> [u16; 3] {
 }
 
 fn prev_position_saturating(pos: u16, dim: u16) -> u16 {
-    debug_assert!(dim > 0);
+    assert!(dim > 0);
     pos.saturating_sub(1)
 }
 
 fn next_position_saturating(pos: u16, dim: u16) -> u16 {
-    debug_assert!(dim > 0);
+    assert!(dim > 0);
     pos.saturating_add(1).min(dim - 1)
 }
 

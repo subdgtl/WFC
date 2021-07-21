@@ -7,11 +7,9 @@ use std::io::{BufReader, BufWriter, Write as _};
 use std::num::ParseIntError;
 use std::path::Path;
 use std::process;
-use std::str::FromStr;
 
 use clap::Clap as _;
-use wfc_core::rand_core::SeedableRng as _;
-use wfc_core::{World, WorldStatus};
+use wfc_core::{Features, Rng, World, WorldStatus};
 
 // This is the same random seed wfc_gh will produce for its default seed.
 const DEFAULT_RANDOM_SEED: u128 = u128::from_le_bytes([
@@ -36,9 +34,6 @@ struct Options {
     /// Z world dimension.
     #[clap(long, short = "z", default_value = "10")]
     pub world_z: u16,
-    /// Entropy computation.
-    #[clap(long, default_value = "linear")]
-    pub entropy: Entropy,
     /// The seed to initalize the random number generator.
     #[clap(long, parse(try_from_str = parse_number_literal))]
     pub random_seed: Option<u128>,
@@ -48,34 +43,12 @@ struct Options {
     pub max_attempts: u32,
 }
 
-#[derive(PartialEq, Eq)]
-enum Entropy {
-    Linear,
-    Shannon,
-}
-
-impl FromStr for Entropy {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "linear" => Ok(Self::Linear),
-            "shannon" => Ok(Self::Shannon),
-            _ => Err("Unknown entropy"),
-        }
-    }
-}
-
 fn main() {
     env_logger::init();
 
     let options = Options::parse();
-    let mut rng = rand_pcg::Pcg32::from_seed(
-        options
-            .random_seed
-            .unwrap_or(DEFAULT_RANDOM_SEED)
-            .to_le_bytes(),
-    );
+    let rng_seed = options.random_seed.unwrap_or(DEFAULT_RANDOM_SEED);
+    let mut rng = Rng::new(rng_seed);
 
     let input_file_path = Path::new(&options.input);
     let input_file_stem = match input_file_path.file_stem() {
@@ -131,11 +104,7 @@ fn main() {
             }
         };
 
-        let mut world = World::new(
-            dims,
-            import_result.adjacencies,
-            options.entropy == Entropy::Shannon,
-        );
+        let mut world = World::new(dims, import_result.adjacencies, Features::empty());
 
         let buf_reader = BufReader::new(world_state_file);
         if let Err(err) =
@@ -165,11 +134,7 @@ fn main() {
 
         world
     } else {
-        World::new(
-            dims,
-            import_result.adjacencies,
-            options.entropy == Entropy::Shannon,
-        )
+        World::new(dims, import_result.adjacencies, Features::empty())
     };
 
     let mut world = initial_world.clone();
@@ -257,6 +222,6 @@ fn parse_number_literal(input: &str) -> Result<u128, ParseIntError> {
     if input.starts_with("0x") || input.starts_with("0X") {
         u128::from_str_radix(&input[2..], 16)
     } else {
-        u128::from_str_radix(input, 10)
+        input.parse()
     }
 }

@@ -9,13 +9,11 @@ mod convert;
 use std::mem;
 use std::slice;
 
-use wfc_core::rand_core::SeedableRng as _;
-use wfc_core::{self, Adjacency, AdjacencyKind, World, WorldStatus};
+use wfc_core::{
+    self, Adjacency, AdjacencyKind, Features, Rng, World, WorldStatus, MAX_MODULE_COUNT,
+};
 
 use crate::convert::{cast_u8, cast_usize};
-
-// Note: Volatile! It has to be the same as bitvec::MAX_LEN.
-const MAX_MODULE_COUNT: u32 = 256 - 8;
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,12 +23,12 @@ pub enum AdjacencyRuleKind {
     Z = 2,
 }
 
-impl Into<AdjacencyKind> for AdjacencyRuleKind {
-    fn into(self) -> AdjacencyKind {
-        match self {
-            Self::X => AdjacencyKind::X,
-            Self::Y => AdjacencyKind::Y,
-            Self::Z => AdjacencyKind::Z,
+impl From<AdjacencyRuleKind> for AdjacencyKind {
+    fn from(kind: AdjacencyRuleKind) -> Self {
+        match kind {
+            AdjacencyRuleKind::X => Self::X,
+            AdjacencyRuleKind::Y => Self::Y,
+            AdjacencyRuleKind::Z => Self::Z,
         }
     }
 }
@@ -43,21 +41,14 @@ pub struct AdjacencyRule {
     pub module_high: u8,
 }
 
-impl Into<Adjacency> for AdjacencyRule {
-    fn into(self) -> Adjacency {
-        Adjacency {
-            kind: self.kind.into(),
-            module_low: self.module_low,
-            module_high: self.module_high,
+impl From<AdjacencyRule> for Adjacency {
+    fn from(rule: AdjacencyRule) -> Self {
+        Self {
+            kind: rule.kind.into(),
+            module_low: rule.module_low,
+            module_high: rule.module_high,
         }
     }
-}
-
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Entropy {
-    Linear = 0,
-    Shannon = 1,
 }
 
 /// An opaque handle to the Wave Function Collapse world state. Actually a
@@ -68,7 +59,29 @@ pub struct WfcWorldStateHandle(*mut World);
 /// An opaque handle to the PRNG state used by the Wave Function Collapse
 /// implementation. Actually a pointer, but shhh!
 #[repr(transparent)]
-pub struct WfcRngStateHandle(*mut rand_pcg::Pcg32);
+pub struct WfcRngStateHandle(*mut Rng);
+
+/// Returns the maximum module count supported to be sent with
+/// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
+/// implementation.
+#[no_mangle]
+pub extern "C" fn wfc_query_max_module_count() -> u32 {
+    MAX_MODULE_COUNT
+}
+
+/// Slot entropy calculation utilizes weights. Will allocate memory for weights
+/// if enabled.
+#[no_mangle]
+pub extern "C" fn wfc_feature_weighted_entropy() -> u32 {
+    Features::WEIGHTED_ENTROPY.into_bits()
+}
+
+/// Module selection during observation performs weighted random. Will allocate
+/// memory for weights if enabled.
+#[no_mangle]
+pub extern "C" fn wfc_feature_weighted_observation() -> u32 {
+    Features::WEIGHTED_OBSERVATION.into_bits()
+}
 
 #[repr(u32)]
 pub enum WfcWorldStateInitResult {
@@ -77,20 +90,21 @@ pub enum WfcWorldStateInitResult {
     ErrWorldDimensionsZero = 2,
 }
 
-/// Returns the maximum module count supported to be sent with
-/// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
-/// implementation.
-#[no_mangle]
-pub extern "C" fn wfc_max_module_count_get() -> u32 {
-    MAX_MODULE_COUNT
-}
-
 /// Creates an instance of Wave Function Collapse world state and initializes it
 /// with adjacency rules. The world gets initialized with every module possible
 /// in every slot.
 ///
+/// Various [`Features`] can be enabled when creating the world. Attempting to
+/// use these features without enabling them here can result in unexpected behavior.
+///
 /// To change the world state to a different configuration, use
 /// [`wfc_world_state_slots_set`].
+///
+/// Initially the world is configured to have uniform weights for each module
+/// across all slots, but this can be customized with
+/// [`wfc_world_state_slot_module_weights_set`]. These weights can be utilized
+/// either for slot entropy computation ([`Features::WEIGHTED_ENTROPY`]), or
+/// weighted slot observation ([`Features::WEIGHTED_OBSERVATION`]).
 ///
 /// # Safety
 ///
@@ -109,7 +123,7 @@ pub unsafe extern "C" fn wfc_world_state_init(
     world_x: u16,
     world_y: u16,
     world_z: u16,
-    entropy: Entropy,
+    features: u32,
 ) -> WfcWorldStateInitResult {
     let adjacency_rules = {
         assert!(!adjacency_rules_ptr.is_null());
@@ -136,11 +150,8 @@ pub unsafe extern "C" fn wfc_world_state_init(
         .map(|adjacency_rule| (*adjacency_rule).into())
         .collect();
 
-    let world = World::new(
-        [world_x, world_y, world_z],
-        adjacencies,
-        entropy == Entropy::Shannon,
-    );
+    let world_features = Features::from_bits_truncate(features);
+    let world = World::new([world_x, world_y, world_z], adjacencies, world_features);
     let world_ptr = Box::into_raw(Box::new(world));
     let wfc_world_state_handle = WfcWorldStateHandle(world_ptr);
 
@@ -369,6 +380,59 @@ pub unsafe extern "C" fn wfc_world_state_slots_get(
     export_slots(world, slots);
 }
 
+#[repr(u32)]
+pub enum WfcWorldStateSlotModuleWeightsSetResult {
+    Ok = 0,
+    ErrNotNormalPositive = 1,
+}
+
+/// Writes Wave Function Collapse module weights for each slot from
+/// `slot_module_weights_ptr` and `slot_module_weights_len` into the provided
+/// handle.
+///
+/// The written weights will influence slot either entropy computation or module
+/// selection for the slot they were written, depending on the enabled features.
+///
+/// The weights are stored in a four dimensional array (compacted in a one
+/// dimensional array). To get a slice of weights on position `[x, y, z]`, first
+/// slice by Z, then Y, then X. The lenght of the weight slice must be equal to
+/// the world's module count.
+///
+/// The weights must be positive, normal (non-zero, not infinite, not NaN)
+/// floating point numbers.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
+///
+/// - `slot_module_weights_ptr` and `slot_module_weights_len` are used to
+///   construct a slice. See [`std::slice::from_raw_parts`].
+#[no_mangle]
+pub unsafe extern "C" fn wfc_world_state_slot_module_weights_set(
+    wfc_world_state_handle: WfcWorldStateHandle,
+    slot_module_weights_ptr: *const f32,
+    slot_module_weights_len: usize,
+) -> WfcWorldStateSlotModuleWeightsSetResult {
+    let world = {
+        assert!(!wfc_world_state_handle.0.is_null());
+        &mut *wfc_world_state_handle.0
+    };
+
+    let slot_module_weights = {
+        assert!(!slot_module_weights_ptr.is_null());
+        assert_ne!(slot_module_weights_len, 0);
+        assert!(slot_module_weights_len * mem::size_of::<f32>() < isize::MAX as usize);
+        slice::from_raw_parts(slot_module_weights_ptr, slot_module_weights_len)
+    };
+
+    import_slot_module_weights(world, slot_module_weights)
+}
+
 /// Creates an instance of pseudo-random number generator and initializes it
 /// with the provided seed.
 ///
@@ -391,7 +455,7 @@ pub unsafe extern "C" fn wfc_rng_state_init(
     let mut rng_seed = [0u8; 16];
     rng_seed[0..8].copy_from_slice(&rng_seed_low.to_le_bytes());
     rng_seed[8..16].copy_from_slice(&rng_seed_high.to_le_bytes());
-    let rng = rand_pcg::Pcg32::from_seed(rng_seed);
+    let rng = Rng::new(u128::from_le_bytes(rng_seed));
 
     let rng_ptr = Box::into_raw(Box::new(rng));
     let wfc_rng_state_handle = WfcRngStateHandle(rng_ptr);
@@ -553,4 +617,27 @@ fn export_slot(world: &World, pos: [u16; 3], slot_state: &mut [u64; 4]) {
 
         slot_state[blk_index] |= 1 << bit_index;
     }
+}
+
+fn import_slot_module_weights(
+    world: &mut World,
+    slot_module_weights: &[f32],
+) -> WfcWorldStateSlotModuleWeightsSetResult {
+    let [dim_x, dim_y, dim_z] = world.dims();
+    let slot_count = usize::from(dim_x) * usize::from(dim_y) * usize::from(dim_z);
+    let module_count = world.module_count();
+    assert_eq!(slot_module_weights.len(), module_count * slot_count);
+
+    for weight in slot_module_weights {
+        if !weight.is_normal() || !weight.is_sign_positive() {
+            return WfcWorldStateSlotModuleWeightsSetResult::ErrNotNormalPositive;
+        }
+    }
+
+    for (i, weights_chunk) in slot_module_weights.chunks_exact(module_count).enumerate() {
+        let pos = wfc_core::index_to_position(slot_count, world.dims(), i);
+        world.set_slot_module_weights(pos, weights_chunk);
+    }
+
+    WfcWorldStateSlotModuleWeightsSetResult::Ok
 }

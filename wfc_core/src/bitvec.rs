@@ -1,5 +1,4 @@
-pub const MAX_LEN: u8 = u8::MAX - 8;
-pub const MAX_LEN_U64: u64 = MAX_LEN as u64;
+use std::fmt;
 
 const DATA_MASK: u64 = u64::MAX >> 8;
 
@@ -15,6 +14,8 @@ pub struct BitVec {
 }
 
 impl BitVec {
+    pub const MAX_LEN: u8 = u8::MAX - 8;
+
     /// Creates a new bit vector with all bits set to zero.
     pub const fn zeros() -> Self {
         Self { data: [0; 4] }
@@ -22,7 +23,7 @@ impl BitVec {
 
     /// Returns whether the bit vector has a bit set.
     pub fn contains(&self, index: u8) -> bool {
-        assert!(index < MAX_LEN);
+        assert!(index < Self::MAX_LEN);
         let index = usize::from(index);
 
         let blk_index = index / 64;
@@ -32,10 +33,10 @@ impl BitVec {
         value != 0
     }
 
-    /// Sets a bit in the vector to one. Returns `true` if the bit was not
+    /// Sets a bit in the vector to one. Returns [`true`] if the bit was not
     /// previously set.
     pub fn add(&mut self, index: u8) -> bool {
-        assert!(index < MAX_LEN);
+        assert!(index < Self::MAX_LEN);
         let index = usize::from(index);
 
         let blk_index = index / 64;
@@ -52,10 +53,10 @@ impl BitVec {
         }
     }
 
-    /// Sets a bit in the vector to zero. Returns `true` if the bit was
+    /// Sets a bit in the vector to zero. Returns [`true`] if the bit was
     /// previously set.
     pub fn remove(&mut self, index: u8) -> bool {
-        assert!(index < MAX_LEN);
+        assert!(index < Self::MAX_LEN);
         let index = usize::from(index);
 
         let blk_index = index / 64;
@@ -93,7 +94,7 @@ impl BitVec {
 
     fn inc_len(&mut self) {
         let mut len = self.data[3] >> 56;
-        assert!(len < MAX_LEN_U64);
+        assert!(len < Self::MAX_LEN as u64);
 
         len += 1;
 
@@ -110,6 +111,16 @@ impl BitVec {
     }
 }
 
+impl fmt::Binary for BitVec {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "[{:064b}][{:064b}][{:064b}][{:064b}]",
+            self.data[0], self.data[1], self.data[2], self.data[3],
+        )
+    }
+}
+
 pub struct BitVecIterator<'a> {
     bitvec: &'a BitVec,
     next: u8,
@@ -119,7 +130,10 @@ impl<'a> Iterator for BitVecIterator<'a> {
     type Item = u8;
 
     fn next(&mut self) -> Option<u8> {
-        while self.next < MAX_LEN {
+        // TODO(yan): @Speed Try using leading zeros intrinsic to directly seek
+        // to the next element. Ideally do this in a BitVec::first_after
+        // function or similar.
+        while self.next < BitVec::MAX_LEN {
             let index = self.next;
 
             let contains = self.bitvec.contains(index);
