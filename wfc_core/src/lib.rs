@@ -65,6 +65,10 @@ impl Features {
         Self(raw & ALL)
     }
 
+    pub const fn empty() -> Self {
+        Self(0)
+    }
+
     pub fn contains_any_weighted(&self) -> bool {
         const ALL_WEIGHTED: u32 = 0x01 | 0x02;
         self.0 & ALL_WEIGHTED > 0
