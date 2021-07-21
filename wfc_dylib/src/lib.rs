@@ -550,10 +550,6 @@ pub unsafe extern "C" fn wfc_observe(
     }
 }
 
-// TODO(yan): Import/Export convert indices to positions and back, set bits by
-// one instead of copying memory, etc... Should we expose the underlying
-// representation?
-
 fn import_slots(world: &mut World, world_state: &[[u64; 4]]) {
     let [dim_x, dim_y, dim_z] = world.dims();
     assert_eq!(
