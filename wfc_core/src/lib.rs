@@ -1,7 +1,6 @@
 mod bitvec;
 mod convert;
 
-
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::convert::TryFrom;
