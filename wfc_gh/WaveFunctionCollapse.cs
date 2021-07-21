@@ -132,7 +132,7 @@ namespace wfc_gh
 
             // Check ahead of time, if there are at most maxModuleCount modules
             // altogether in the input.
-            uint maxModuleCount = Native.wfc_max_module_count_get();
+            uint maxModuleCount = Native.wfc_query_max_module_count();
             {
                 HashSet<string> allModules = new HashSet<string>();
 
