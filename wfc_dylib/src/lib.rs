@@ -62,19 +62,19 @@ pub struct WfcWorldStateHandle(*mut World);
 #[repr(transparent)]
 pub struct WfcRngStateHandle(*mut Rng);
 
-#[repr(u32)]
-pub enum WfcWorldStateInitResult {
-    Ok = 0,
-    ErrTooManyModules = 1,
-    ErrWorldDimensionsZero = 2,
-}
-
 /// Returns the maximum module count supported to be sent with
 /// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
 /// implementation.
 #[no_mangle]
 pub extern "C" fn wfc_max_module_count_get() -> u32 {
     MAX_MODULE_COUNT
+}
+
+#[repr(u32)]
+pub enum WfcWorldStateInitResult {
+    Ok = 0,
+    ErrTooManyModules = 1,
+    ErrWorldDimensionsZero = 2,
 }
 
 /// Creates an instance of Wave Function Collapse world state and initializes it
@@ -368,6 +368,12 @@ pub unsafe extern "C" fn wfc_world_state_slots_get(
     export_slots(world, slots);
 }
 
+#[repr(u32)]
+pub enum WfcWorldStateSlotModuleWeightsSetResult {
+    Ok = 0,
+    ErrNotNormalPositive = 1,
+}
+
 /// Writes Wave Function Collapse module weights for each slot from
 /// `slot_module_weights_ptr` and `slot_module_weights_len` into the provided
 /// handle.
@@ -396,7 +402,7 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_weights_set(
     wfc_world_state_handle: WfcWorldStateHandle,
     slot_module_weights_ptr: *const f32,
     slot_module_weights_len: usize,
-) {
+) -> WfcWorldStateSlotModuleWeightsSetResult {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &mut *wfc_world_state_handle.0
@@ -409,7 +415,7 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_weights_set(
         slice::from_raw_parts(slot_module_weights_ptr, slot_module_weights_len)
     };
 
-    import_slot_module_weights(world, slot_module_weights);
+    import_slot_module_weights(world, slot_module_weights)
 }
 
 /// Creates an instance of pseudo-random number generator and initializes it
@@ -602,14 +608,25 @@ fn export_slot(world: &World, pos: [u16; 3], slot_state: &mut [u64; 4]) {
     }
 }
 
-fn import_slot_module_weights(world: &mut World, slot_module_weights: &[f32]) {
+fn import_slot_module_weights(
+    world: &mut World,
+    slot_module_weights: &[f32],
+) -> WfcWorldStateSlotModuleWeightsSetResult {
     let [dim_x, dim_y, dim_z] = world.dims();
     let slot_count = usize::from(dim_x) * usize::from(dim_y) * usize::from(dim_z);
     let module_count = world.module_count();
     assert_eq!(slot_module_weights.len(), module_count * slot_count);
 
+    for weight in slot_module_weights {
+        if !weight.is_normal() || !weight.is_sign_positive() {
+            return WfcWorldStateSlotModuleWeightsSetResult::ErrNotNormalPositive;
+        }
+    }
+
     for (i, weights_chunk) in slot_module_weights.chunks_exact(module_count).enumerate() {
         let pos = wfc_core::index_to_position(slot_count, world.dims(), i);
         world.set_slot_module_weights(pos, weights_chunk);
     }
+
+    WfcWorldStateSlotModuleWeightsSetResult::Ok
 }

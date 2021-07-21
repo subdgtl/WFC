@@ -265,8 +265,21 @@ impl World {
         slot.iter()
     }
 
+    /// Sets weights for a module.
+    ///
+    /// Computations running on the weights require them to be normal, positive
+    /// floats (not zero, not infinite, not NaN, not subnormal and sign
+    /// positive).
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the weights is not a normal ([`f32::is_normal`]),
+    /// positive ([`f32::is_sign_positive`]) number.
     pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
         assert_eq!(weights.len(), self.module_count);
+        for weight in weights {
+            assert!(weight.is_normal() && weight.is_sign_positive());
+        }
 
         if let Some(slot_module_weights) = &mut self.slot_module_weights {
             let index_base =

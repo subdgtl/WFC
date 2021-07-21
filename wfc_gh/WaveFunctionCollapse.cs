@@ -569,6 +569,12 @@ namespace wfc_gh
         ErrWorldContradictory = 2,
     }
 
+    internal enum WfcWorldStateSlotModuleWeightsSetResult : uint
+    {
+        Ok = 0,
+        ErrNotNormalPositive = 1,
+    }
+
     internal enum WfcObserveResult: uint {
         Deterministic = 0,
         Contradiction = 1,
@@ -664,9 +670,9 @@ namespace wfc_gh
                                                                      UIntPtr slots_len);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static unsafe extern void wfc_world_state_slot_module_weights_set(IntPtr wfc_world_state_handle,
-                                                                                   float* slot_module_weights_ptr,
-                                                                                   UIntPtr slot_module_weights_len);
+        internal static unsafe extern WfcWorldStateSlotModuleWeightsSetResult wfc_world_state_slot_module_weights_set(IntPtr wfc_world_state_handle,
+                                                                                                                      float* slot_module_weights_ptr,
+                                                                                                                      UIntPtr slot_module_weights_len);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
