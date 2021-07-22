@@ -1,24 +1,22 @@
 use std::fmt;
 
-const DATA_MASK: u64 = u64::MAX >> 8;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BitVec<const N: usize> {
+pub struct ConstBitVec<const N: usize> {
     /// The data and length of the bit vector.
     ///
     /// XXX: Doc where is data and where is len.
     data: [u64; N],
 }
 
-impl<const N: usize> BitVec<N> {
+impl<const N: usize> ConstBitVec<N> {
     // TODO(yan): @Correctness This implementation completely breaks down once
     // CAP reaches 2^64 (or N reaches 2^60), because len currently can't span
     // multiple blocks. In practice, this is a lot of memory and won't happen.
 
     pub const CAP: usize = N * u64::BITS as usize;
 
-    const LEN_SHIFT: u8 = find_len_shift(N);
-    const DATA_MASK: u64 = u64::MAX >> (64 - Self::LEN_SHIFT);
+    const LEN_SEGMENT_SIZE: u8 = find_len_segment_size(N);
+    const DATA_MASK: u64 = u64::MAX >> (64 - Self::LEN_SEGMENT_SIZE);
 
     /// Creates a new bit vector with all bits set to zero.
     pub const fn zeros() -> Self {
@@ -80,7 +78,7 @@ impl<const N: usize> BitVec<N> {
     /// Returns the number of ones in the binary representation of the bit
     /// vector.
     pub fn len(&self) -> usize {
-        (self.data[N - 1] >> Self::LEN_SHIFT) as usize
+        (self.data[N - 1] >> Self::LEN_SEGMENT_SIZE) as usize
     }
 
     /// Sets all bits in the bit vector to zero.
@@ -89,25 +87,25 @@ impl<const N: usize> BitVec<N> {
     }
 
     fn inc_len(&mut self) {
-        let mut len = self.data[N - 1] >> Self::LEN_SHIFT;
+        let mut len = self.data[N - 1] >> Self::LEN_SEGMENT_SIZE;
         assert!(len < Self::CAP as u64);
 
         len += 1;
 
-        self.data[N - 1] = (self.data[N - 1] & Self::DATA_MASK) | (len << Self::LEN_SHIFT);
+        self.data[N - 1] = (self.data[N - 1] & Self::DATA_MASK) | (len << Self::LEN_SEGMENT_SIZE);
     }
 
     fn dec_len(&mut self) {
-        let mut len = self.data[N - 1] >> Self::LEN_SHIFT;
+        let mut len = self.data[N - 1] >> Self::LEN_SEGMENT_SIZE;
         assert!(len > 0);
 
         len -= 1;
 
-        self.data[N - 1] = (self.data[N - 1] & Self::DATA_MASK) | (len << Self::LEN_SHIFT)
+        self.data[N - 1] = (self.data[N - 1] & Self::DATA_MASK) | (len << Self::LEN_SEGMENT_SIZE)
     }
 }
 
-impl<const N: usize> fmt::Binary for BitVec<N> {
+impl<const N: usize> fmt::Binary for ConstBitVec<N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "B:{}", N)?;
 
@@ -119,7 +117,7 @@ impl<const N: usize> fmt::Binary for BitVec<N> {
     }
 }
 
-const fn find_len_shift(blk_count: usize) -> u8 {
+pub const fn find_len_segment_size(blk_count: usize) -> u8 {
     // TODO(yan): This is kind of lazy, work out the formula?
 
     // Start at 6, as 2^6 is 64 - our block size.

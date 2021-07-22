@@ -12,6 +12,7 @@ use fxhash::FxBuildHasher;
 use oorandom::Rand64;
 
 use crate::bitvec::BitVec;
+use crate::constbitvec::ConstBitVec;
 use crate::convert::cast_u8;
 
 pub const MAX_MODULE_COUNT: u32 = BitVec::MAX_LEN as u32;
@@ -39,8 +40,8 @@ impl From<Direction> for AdjacencyKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Adjacency {
     pub kind: AdjacencyKind,
-    pub module_low: u8,
-    pub module_high: u8,
+    pub module_low: u16,
+    pub module_high: u16,
 }
 
 /// Solver ([`World`]) features that have to be explicitly enabled when
@@ -154,11 +155,73 @@ impl Rng {
     }
 }
 
+#[derive(Clone)]
 enum Slots {
-    Block1(Vec<constbitvec::BitVec<1>>),
-    Block2(Vec<constbitvec::BitVec<2>>),
-    Block4(Vec<constbitvec::BitVec<4>>),
-    Block8(Vec<constbitvec::BitVec<8>>),
+    // One block, 64 bits, 6-bit addressing, 58 data bits
+    S1(Vec<ConstBitVec<1>>),
+    // Two blocks - 128 bits, 7-bit addressing, 121 data bits
+    S2(Vec<ConstBitVec<2>>),
+    // Four blocks - 256 bits, 8-bit addressing, 248 data bits
+    S4(Vec<ConstBitVec<4>>),
+    // Eight blocks - 512 bits, 9-bit addressing, 503 data bits
+    S8(Vec<ConstBitVec<8>>),
+    // Sixteen blocks - 1024 bits, 10-bit addressing, 1014 data bits
+    S16(Vec<ConstBitVec<8>>),
+}
+
+impl Slots {
+    pub const MAX_MODULE_COUNT: usize = 1014;
+
+    pub fn new(slot_count: usize, module_count: usize) -> Option<Slots> {
+        match module_count {
+            0..=58 => Some(Self::S1(vec![ConstBitVec::zeros(); slot_count])),
+            59..=121 => Some(Self::S2(vec![ConstBitVec::zeros(); slot_count])),
+            122..=248 => Some(Self::S4(vec![ConstBitVec::zeros(); slot_count])),
+            249..=503 => Some(Self::S8(vec![ConstBitVec::zeros(); slot_count])),
+            504..=1014 => Some(Self::S16(vec![ConstBitVec::zeros(); slot_count])),
+            _ => None,
+        }
+    }
+
+    pub fn contains(&self, slot_index: usize, module_index: usize) -> bool {
+        match self {
+            Self::S1(slots) => slots[slot_index].contains(module_index),
+            Self::S2(slots) => slots[slot_index].contains(module_index),
+            Self::S4(slots) => slots[slot_index].contains(module_index),
+            Self::S8(slots) => slots[slot_index].contains(module_index),
+            Self::S16(slots) => slots[slot_index].contains(module_index),
+        }
+    }
+
+    pub fn add(&mut self, slot_index: usize, module_index: usize) -> bool {
+        match self {
+            Self::S1(slots) => slots[slot_index].add(module_index),
+            Self::S2(slots) => slots[slot_index].add(module_index),
+            Self::S4(slots) => slots[slot_index].add(module_index),
+            Self::S8(slots) => slots[slot_index].add(module_index),
+            Self::S16(slots) => slots[slot_index].add(module_index),
+        }
+    }
+
+    pub fn remove(&mut self, slot_index: usize, module_index: usize) -> bool {
+        match self {
+            Self::S1(slots) => slots[slot_index].remove(module_index),
+            Self::S2(slots) => slots[slot_index].remove(module_index),
+            Self::S4(slots) => slots[slot_index].remove(module_index),
+            Self::S8(slots) => slots[slot_index].remove(module_index),
+            Self::S16(slots) => slots[slot_index].remove(module_index),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::S1(slots) => slots.len(),
+            Self::S2(slots) => slots.len(),
+            Self::S4(slots) => slots.len(),
+            Self::S8(slots) => slots.len(),
+            Self::S16(slots) => slots.len(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -167,8 +230,7 @@ pub struct World {
     adjacencies: Vec<Adjacency>,
     features: Features,
 
-    // XXX: enum { BitVec1(Vec<BitVec<1>>), BitVec2(Vec<BitVec<2>>) }
-    slots: Vec<BitVec>,
+    slots: Slots,
     slot_module_weights: Option<Vec<f32>>,
     module_count: usize,
 
@@ -178,47 +240,55 @@ pub struct World {
 }
 
 impl World {
-    pub fn new(dims: [u16; 3], adjacencies: Vec<Adjacency>, features: Features) -> Self {
-        // TODO(yan): Error handling. Do not unwind across FFI.
-        assert!(dims[0] > 0);
-        assert!(dims[1] > 0);
-        assert!(dims[2] > 0);
+    pub fn new(
+        dims: [u16; 3],
+        adjacencies: Vec<Adjacency>,
+        features: Features,
+    ) -> Result<Self, WorldNewError> {
+        if dims[0] == 0 || dims[1] == 0 || dims[2] == 0 {
+            return Err(WorldNewError::DimensionsZero);
+        }
 
         assert!(!adjacencies.is_empty());
 
         let mut modules = BitVec::zeros();
         let mut module_count: usize = 0;
-        let mut module_max: u8 = 0;
+        let mut module_max: usize = 0;
 
         for adjacency in &adjacencies {
-            assert!(adjacency.module_low < BitVec::MAX_LEN);
-            assert!(adjacency.module_high < BitVec::MAX_LEN);
+            let low = usize::from(adjacency.module_low);
+            let high = usize::from(adjacency.module_high);
 
-            if modules.add(adjacency.module_low) {
-                module_count += 1;
+            if low > module_max {
+                module_max = low;
             }
-            if modules.add(adjacency.module_high) {
-                module_count += 1;
-            }
-
-            if adjacency.module_low > module_max {
-                module_max = adjacency.module_low;
-            }
-            if adjacency.module_high > module_max {
-                module_max = adjacency.module_high;
+            if high > module_max {
+                module_max = high;
             }
         }
 
-        // This assert shouldn't be possible to break if the importer works
-        // correctly. The importer should intern names to sequentially
-        // allocated numbers, starting at 0
-        assert!(
-            module_count == usize::from(module_max) + 1,
-            "No gaps in module indices allowed",
-        );
+        if module_max >= Slots::MAX_MODULE_COUNT {
+            return Err(WorldNewError::TooManyModules);
+        }
 
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
-        let slots = vec![modules; slot_count];
+        let mut slots =
+            Slots::new(slot_count, module_count).ok_or(WorldNewError::TooManyModules)?;
+
+        for adjacency in &adjacencies {
+            if slots.add(0, usize::from(adjacency.module_low)) {
+                module_count += 1;
+            }
+            if slots.add(0, usize::from(adjacency.module_high)) {
+                module_count += 1;
+            }
+        }
+
+        if module_count != usize::from(module_max) + 1 {
+            return Err(WorldNewError::AdjacenciesHaveGaps);
+        }
+
+        // XXX: Spread data from first slot to rest
 
         let slot_module_weights = if features.contains_any_weighted() {
             Some(vec![1.0; slot_count * module_count])
@@ -263,33 +333,29 @@ impl World {
         self.module_count
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: u8) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
         let index = position_to_index(self.slots.len(), self.dims, pos);
-        let slot = &self.slots[index];
-
-        slot.contains(module)
+        self.slots.contains(index, usize::from(module))
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u8, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
         let index = position_to_index(self.slots.len(), self.dims, pos);
-        let slot = &mut self.slots[index];
-
         if value {
-            slot.add(module);
+            self.slots.add(index, usize::from(module));
         } else {
-            slot.remove(module);
+            self.slots.remove(index, usize::from(module));
         }
     }
 
     pub fn set_slot_modules(&mut self, pos: [u16; 3], value: bool) {
         let index = position_to_index(self.slots.len(), self.dims, pos);
-        let slot = &mut self.slots[index];
 
-        for module in 0..cast_u8(self.module_count) {
+        // XXX: @Speed Cache the array access?
+        for module in 0..self.module_count {
             if value {
-                slot.add(module);
+                self.slots.add(index, module);
             } else {
-                slot.remove(module);
+                self.slots.remove(index, module);
             }
         }
     }
@@ -324,16 +390,6 @@ impl World {
             let module_weights =
                 &mut slot_module_weights[index_base..index_base + self.module_count];
             module_weights.copy_from_slice(weights);
-        }
-    }
-
-    /// Resets the world to initial state, where every slot has the possibility
-    /// to contain any module.
-    pub fn reset(&mut self) {
-        for slot in &mut self.slots {
-            for module in 0..cast_u8(self.module_count) {
-                slot.add(module);
-            }
         }
     }
 
