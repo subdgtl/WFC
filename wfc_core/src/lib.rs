@@ -1,6 +1,5 @@
-mod bitvec;
-mod constbitvec;
 mod convert;
+mod slots;
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -11,11 +10,12 @@ use arrayvec::ArrayVec;
 use fxhash::FxBuildHasher;
 use oorandom::Rand64;
 
-use crate::bitvec::BitVec;
-use crate::constbitvec::ConstBitVec;
-use crate::convert::cast_u8;
+use crate::convert::cast_u16;
+// XXX: Naming
+use crate::slots::BitVec;
 
-pub const MAX_MODULE_COUNT: u32 = BitVec::MAX_LEN as u32;
+// XXX
+pub const MAX_MODULE_COUNT: usize = 1014;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyKind {
@@ -155,91 +155,48 @@ impl Rng {
     }
 }
 
-#[derive(Clone)]
-enum Slots {
-    // One block, 64 bits, 6-bit addressing, 58 data bits
-    S1(Vec<ConstBitVec<1>>),
-    // Two blocks - 128 bits, 7-bit addressing, 121 data bits
-    S2(Vec<ConstBitVec<2>>),
-    // Four blocks - 256 bits, 8-bit addressing, 248 data bits
-    S4(Vec<ConstBitVec<4>>),
-    // Eight blocks - 512 bits, 9-bit addressing, 503 data bits
-    S8(Vec<ConstBitVec<8>>),
-    // Sixteen blocks - 1024 bits, 10-bit addressing, 1014 data bits
-    S16(Vec<ConstBitVec<8>>),
-}
-
-impl Slots {
-    pub const MAX_MODULE_COUNT: usize = 1014;
-
-    pub fn new(slot_count: usize, module_count: usize) -> Option<Slots> {
-        match module_count {
-            0..=58 => Some(Self::S1(vec![ConstBitVec::zeros(); slot_count])),
-            59..=121 => Some(Self::S2(vec![ConstBitVec::zeros(); slot_count])),
-            122..=248 => Some(Self::S4(vec![ConstBitVec::zeros(); slot_count])),
-            249..=503 => Some(Self::S8(vec![ConstBitVec::zeros(); slot_count])),
-            504..=1014 => Some(Self::S16(vec![ConstBitVec::zeros(); slot_count])),
-            _ => None,
-        }
-    }
-
-    pub fn contains(&self, slot_index: usize, module_index: usize) -> bool {
-        match self {
-            Self::S1(slots) => slots[slot_index].contains(module_index),
-            Self::S2(slots) => slots[slot_index].contains(module_index),
-            Self::S4(slots) => slots[slot_index].contains(module_index),
-            Self::S8(slots) => slots[slot_index].contains(module_index),
-            Self::S16(slots) => slots[slot_index].contains(module_index),
-        }
-    }
-
-    pub fn add(&mut self, slot_index: usize, module_index: usize) -> bool {
-        match self {
-            Self::S1(slots) => slots[slot_index].add(module_index),
-            Self::S2(slots) => slots[slot_index].add(module_index),
-            Self::S4(slots) => slots[slot_index].add(module_index),
-            Self::S8(slots) => slots[slot_index].add(module_index),
-            Self::S16(slots) => slots[slot_index].add(module_index),
-        }
-    }
-
-    pub fn remove(&mut self, slot_index: usize, module_index: usize) -> bool {
-        match self {
-            Self::S1(slots) => slots[slot_index].remove(module_index),
-            Self::S2(slots) => slots[slot_index].remove(module_index),
-            Self::S4(slots) => slots[slot_index].remove(module_index),
-            Self::S8(slots) => slots[slot_index].remove(module_index),
-            Self::S16(slots) => slots[slot_index].remove(module_index),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            Self::S1(slots) => slots.len(),
-            Self::S2(slots) => slots.len(),
-            Self::S4(slots) => slots.len(),
-            Self::S8(slots) => slots.len(),
-            Self::S16(slots) => slots.len(),
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WorldNewError {
+    DimensionsZero,
+    TooManyModules,
+    // XXX: Naming
+    AdjacenciesHaveGaps,
 }
 
 #[derive(Clone)]
 pub struct World {
+    inner: WorldInner
+}
+
+impl World {
+    // pub fn find_world_size() ->
+}
+
+#[derive(Clone)]
+enum WorldInner {
+    BlockSize1(WorldInnerConst<1>),
+    BlockSize2(WorldInnerConst<2>),
+    BlockSize4(WorldInnerConst<4>),
+    BlockSize8(WorldInnerConst<8>),
+    BlockSize16(WorldInnerConst<16>),
+}
+
+#[derive(Clone)]
+struct WorldInnerConst<const N: usize> {
     dims: [u16; 3],
     adjacencies: Vec<Adjacency>,
     features: Features,
 
-    slots: Slots,
+    slots: Vec<BitVec<N>>,
+    slot_module_count: usize,
     slot_module_weights: Option<Vec<f32>>,
-    module_count: usize,
 
     /// Working memory for picking the nondeterministic slot with smallest
     /// entropy. Pre-allocated to maximum capacity.
     min_entropy_slots: Vec<usize>,
 }
 
-impl World {
+impl<const N: usize> WorldInnerConst<N> {
     pub fn new(
         dims: [u16; 3],
         adjacencies: Vec<Adjacency>,
@@ -249,67 +206,65 @@ impl World {
             return Err(WorldNewError::DimensionsZero);
         }
 
+        // XXX: Do we need this? Or should we result it? Doesn't it just mean a contradictory world?
         assert!(!adjacencies.is_empty());
 
-        let mut modules = BitVec::zeros();
-        let mut module_count: usize = 0;
-        let mut module_max: usize = 0;
+        let mut slot_module_count: usize = 0;
+        let mut slot_module_max: usize = 0;
+
+        let mut slot = BitVec::zeros();
 
         for adjacency in &adjacencies {
             let low = usize::from(adjacency.module_low);
             let high = usize::from(adjacency.module_high);
 
-            if low > module_max {
-                module_max = low;
+            if low > slot_module_max {
+                slot_module_max = low;
             }
-            if high > module_max {
-                module_max = high;
+            if high > slot_module_max {
+                slot_module_max = high;
+            }
+
+            if slot.add(usize::from(adjacency.module_low)) {
+                slot_module_count += 1;
+            }
+            if slot.add(usize::from(adjacency.module_high)) {
+                slot_module_count += 1;
             }
         }
 
-        if module_max >= Slots::MAX_MODULE_COUNT {
+        // XXX: This should be an assert. The outer world should never let this come here.
+        if slot_module_max >= MAX_MODULE_COUNT {
             return Err(WorldNewError::TooManyModules);
         }
 
-        let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
-        let mut slots =
-            Slots::new(slot_count, module_count).ok_or(WorldNewError::TooManyModules)?;
-
-        for adjacency in &adjacencies {
-            if slots.add(0, usize::from(adjacency.module_low)) {
-                module_count += 1;
-            }
-            if slots.add(0, usize::from(adjacency.module_high)) {
-                module_count += 1;
-            }
-        }
-
-        if module_count != usize::from(module_max) + 1 {
+        if slot_module_count != slot_module_max + 1 {
             return Err(WorldNewError::AdjacenciesHaveGaps);
         }
 
-        // XXX: Spread data from first slot to rest
+        let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
+        let slots = vec![slot; slot_count];
 
         let slot_module_weights = if features.contains_any_weighted() {
-            Some(vec![1.0; slot_count * module_count])
+            Some(vec![1.0; slot_count * slot_module_count])
         } else {
             None
         };
 
-        Self {
+        Ok(Self {
             dims,
             adjacencies,
             features,
 
             slots,
+            slot_module_count,
             slot_module_weights,
-            module_count,
 
             min_entropy_slots: Vec::with_capacity(slot_count),
-        }
+        })
     }
 
-    pub fn clone_from(&mut self, other: &World) {
+    pub fn clone_from(&mut self, other: &Self) {
         self.dims = other.dims;
         self.adjacencies.clone_from(&other.adjacencies);
         self.features = other.features;
@@ -318,7 +273,7 @@ impl World {
         self.slot_module_weights
             .clone_from(&other.slot_module_weights);
 
-        self.module_count = other.module_count;
+        self.slot_module_count = other.slot_module_count;
     }
 
     pub fn dims(&self) -> [u16; 3] {
@@ -329,42 +284,44 @@ impl World {
         self.slots.len()
     }
 
-    pub fn module_count(&self) -> usize {
-        self.module_count
+    pub fn slot_module_count(&self) -> usize {
+        self.slot_module_count
     }
 
     pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
         let index = position_to_index(self.slots.len(), self.dims, pos);
-        self.slots.contains(index, usize::from(module))
+        self.slots[index].contains(usize::from(module))
     }
 
     pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
         let index = position_to_index(self.slots.len(), self.dims, pos);
+        let slot = &mut self.slots[index];
+
         if value {
-            self.slots.add(index, usize::from(module));
+            slot.add(usize::from(module));
         } else {
-            self.slots.remove(index, usize::from(module));
+            slot.remove(usize::from(module));
         }
     }
 
     pub fn set_slot_modules(&mut self, pos: [u16; 3], value: bool) {
         let index = position_to_index(self.slots.len(), self.dims, pos);
+        let slot = &mut self.slots[index];
 
-        // XXX: @Speed Cache the array access?
-        for module in 0..self.module_count {
+        for module in 0..self.slot_module_count {
             if value {
-                self.slots.add(index, module);
+                slot.add(module);
             } else {
-                self.slots.remove(index, module);
+                slot.remove(module);
             }
         }
     }
 
-    pub fn slot_modules_iter(&self, pos: [u16; 3]) -> impl Iterator<Item = u8> + '_ {
+    pub fn slot_modules_iter(&self, pos: [u16; 3]) -> impl Iterator<Item = u16> + '_ {
         let index = position_to_index(self.slots.len(), self.dims, pos);
         let slot = &self.slots[index];
 
-        slot.iter()
+        slot.iter().map(cast_u16)
     }
 
     /// Sets weights for a module.
@@ -378,17 +335,17 @@ impl World {
     /// Panics if any of the weights is not a normal ([`f32::is_normal`]),
     /// positive ([`f32::is_sign_positive`]) number.
     pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
-        assert_eq!(weights.len(), self.module_count);
+        assert_eq!(weights.len(), self.slot_module_count);
         for weight in weights {
             assert!(weight.is_normal() && weight.is_sign_positive());
         }
 
         if let Some(slot_module_weights) = &mut self.slot_module_weights {
             let index_base =
-                self.module_count * position_to_index(self.slots.len(), self.dims, pos);
+                self.slot_module_count * position_to_index(self.slots.len(), self.dims, pos);
 
             let module_weights =
-                &mut slot_module_weights[index_base..index_base + self.module_count];
+                &mut slot_module_weights[index_base..index_base + self.slot_module_count];
             module_weights.copy_from_slice(weights);
         }
     }
@@ -448,7 +405,7 @@ impl World {
                 let mut sum_weights = 0.0;
                 let mut sum_weight_log_weights = 0.0;
                 for module in slot {
-                    let weight_index = self.module_count * i + usize::from(module);
+                    let weight_index = self.slot_module_count * i + usize::from(module);
                     let weight = slot_module_weights[weight_index];
                     sum_weights += weight;
                     sum_weight_log_weights += weight * weight.ln();
@@ -490,8 +447,8 @@ impl World {
             // possibilities from the slot.
             let chosen_module = if self.features.has_weighted_observation() {
                 let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
-                let index_base = self.module_count * min_entropy_slot_index;
-                let weights = &slot_module_weights[index_base..index_base + self.module_count];
+                let index_base = self.slot_module_count * min_entropy_slot_index;
+                let weights = &slot_module_weights[index_base..index_base + self.slot_module_count];
 
                 choose_module_weighted(rand64, &min_entropy_slot, weights)
             } else {
@@ -534,7 +491,7 @@ impl World {
     }
 
     fn propagate_constraints(&mut self, slot_index: usize) -> (bool, bool) {
-        let slots_len = self.slots.len();
+        let slot_count = self.slots.len();
         let [dim_x, dim_y, dim_z] = self.dims;
 
         let mut visited = HashSet::with_hasher(FxBuildHasher::default());
@@ -570,16 +527,18 @@ impl World {
                         .filter(|adj| adj.kind == AdjacencyKind::from(s.search_direction))
                         .filter(|adj| {
                             if s.search_direction.is_positive() {
-                                slot_prev.contains(adj.module_low) && slot.contains(adj.module_high)
+                                slot_prev.contains(usize::from(adj.module_low))
+                                    && slot.contains(usize::from(adj.module_high))
                             } else {
-                                slot_prev.contains(adj.module_high) && slot.contains(adj.module_low)
+                                slot_prev.contains(usize::from(adj.module_high))
+                                    && slot.contains(usize::from(adj.module_low))
                             }
                         })
                     {
                         if s.search_direction.is_positive() {
-                            new_slot.add(adj.module_high);
+                            new_slot.add(usize::from(adj.module_high));
                         } else {
-                            new_slot.add(adj.module_low);
+                            new_slot.add(usize::from(adj.module_low));
                         }
                     }
 
@@ -610,13 +569,13 @@ impl World {
                 }
                 SearchState::SearchLeft => {
                     let slot_index = s.slot_index;
-                    let pos = index_to_position(slots_len, self.dims, slot_index);
+                    let pos = index_to_position(slot_count, self.dims, slot_index);
                     let pos_next = [prev_position_saturating(pos[0], dim_x), pos[1], pos[2]];
 
                     s.search_state = SearchState::SearchRight;
 
                     if pos != pos_next {
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                        let slot_index_next = position_to_index(slot_count, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
                                 search_state: SearchState::Init,
@@ -629,13 +588,13 @@ impl World {
                 }
                 SearchState::SearchRight => {
                     let slot_index = s.slot_index;
-                    let pos = index_to_position(slots_len, self.dims, slot_index);
+                    let pos = index_to_position(slot_count, self.dims, slot_index);
                     let pos_next = [next_position_saturating(pos[0], dim_x), pos[1], pos[2]];
 
                     s.search_state = SearchState::SearchFront;
 
                     if pos != pos_next {
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                        let slot_index_next = position_to_index(slot_count, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
                                 search_state: SearchState::Init,
@@ -648,13 +607,13 @@ impl World {
                 }
                 SearchState::SearchFront => {
                     let slot_index = s.slot_index;
-                    let pos = index_to_position(slots_len, self.dims, slot_index);
+                    let pos = index_to_position(slot_count, self.dims, slot_index);
                     let pos_next = [pos[0], prev_position_saturating(pos[1], dim_y), pos[2]];
 
                     s.search_state = SearchState::SearchBack;
 
                     if pos != pos_next {
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                        let slot_index_next = position_to_index(slot_count, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
                                 search_state: SearchState::Init,
@@ -667,13 +626,13 @@ impl World {
                 }
                 SearchState::SearchBack => {
                     let slot_index = s.slot_index;
-                    let pos = index_to_position(slots_len, self.dims, slot_index);
+                    let pos = index_to_position(slot_count, self.dims, slot_index);
                     let pos_next = [pos[0], next_position_saturating(pos[1], dim_y), pos[2]];
 
                     s.search_state = SearchState::SearchDown;
 
                     if pos != pos_next {
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                        let slot_index_next = position_to_index(slot_count, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
                                 search_state: SearchState::Init,
@@ -686,13 +645,13 @@ impl World {
                 }
                 SearchState::SearchDown => {
                     let slot_index = s.slot_index;
-                    let pos = index_to_position(slots_len, self.dims, slot_index);
+                    let pos = index_to_position(slot_count, self.dims, slot_index);
                     let pos_next = [pos[0], pos[1], prev_position_saturating(pos[2], dim_z)];
 
                     s.search_state = SearchState::SearchUp;
 
                     if pos != pos_next {
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                        let slot_index_next = position_to_index(slot_count, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
                                 search_state: SearchState::Init,
@@ -705,13 +664,13 @@ impl World {
                 }
                 SearchState::SearchUp => {
                     let slot_index = s.slot_index;
-                    let pos = index_to_position(slots_len, self.dims, slot_index);
+                    let pos = index_to_position(slot_count, self.dims, slot_index);
                     let pos_next = [pos[0], pos[1], next_position_saturating(pos[2], dim_z)];
 
                     s.search_state = SearchState::Done;
 
                     if pos != pos_next {
-                        let slot_index_next = position_to_index(slots_len, self.dims, pos_next);
+                        let slot_index_next = position_to_index(slot_count, self.dims, pos_next);
                         if !visited.contains(&slot_index_next) {
                             stack.push(StackEntry {
                                 search_state: SearchState::Init,
@@ -743,7 +702,7 @@ fn choose_slot(rng: &mut Rand64, slots: &[usize]) -> usize {
     slots[index]
 }
 
-fn choose_module(rng: &mut Rand64, slot: &BitVec) -> u8 {
+fn choose_module<const N: usize>(rng: &mut Rand64, slot: &BitVec<N>) -> usize {
     assert!(slot.len() > 0);
 
     let rand_num = rng.rand_u64() as usize;
@@ -751,11 +710,13 @@ fn choose_module(rng: &mut Rand64, slot: &BitVec) -> u8 {
     slot.iter().nth(index).unwrap()
 }
 
-fn choose_module_weighted(rng: &mut Rand64, slot: &BitVec, weights: &[f32]) -> u8 {
-    const MAX_LEN: usize = BitVec::MAX_LEN as usize;
-
+fn choose_module_weighted<const N: usize>(
+    rng: &mut Rand64,
+    slot: &BitVec<N>,
+    weights: &[f32],
+) -> usize {
     assert!(slot.len() > 0);
-    assert!(weights.len() <= MAX_LEN);
+    assert!(weights.len() <= MAX_MODULE_COUNT);
 
     // The following search over accumulated weights is ok and the unwraps
     // should never panic. This is because when we compute cummulative weights,
@@ -771,10 +732,10 @@ fn choose_module_weighted(rng: &mut Rand64, slot: &BitVec, weights: &[f32]) -> u
     // reason, we track whether we have already visited a present module.
 
     let mut cummulative_weight: f32 = 0.0;
-    let mut cummulative_weights: ArrayVec<f32, MAX_LEN> = ArrayVec::new();
+    let mut cummulative_weights: ArrayVec<f32, MAX_MODULE_COUNT> = ArrayVec::new();
 
     for (i, weight) in weights.iter().enumerate() {
-        if slot.contains(cast_u8(i)) {
+        if slot.contains(i) {
             cummulative_weight += weight;
         }
 
@@ -800,7 +761,7 @@ fn choose_module_weighted(rng: &mut Rand64, slot: &BitVec, weights: &[f32]) -> u
         })
         .unwrap();
 
-    cast_u8(index)
+    index
 }
 
 pub fn position_to_index(len: usize, dims: [u16; 3], position: [u16; 3]) -> usize {
