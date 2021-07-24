@@ -10,46 +10,10 @@ use std::mem;
 use std::slice;
 
 use wfc_core::{
-    self, Adjacency, AdjacencyKind, Features, Rng, World, WorldStatus, MAX_MODULE_COUNT,
+    self, AdjacencyRule, AdjacencyRuleKind, Features, Rng, World, WorldStatus, MAX_MODULE_COUNT,
 };
 
 use crate::convert::{cast_u8, cast_usize};
-
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AdjacencyRuleKind {
-    X = 0,
-    Y = 1,
-    Z = 2,
-}
-
-impl From<AdjacencyRuleKind> for AdjacencyKind {
-    fn from(kind: AdjacencyRuleKind) -> Self {
-        match kind {
-            AdjacencyRuleKind::X => Self::X,
-            AdjacencyRuleKind::Y => Self::Y,
-            AdjacencyRuleKind::Z => Self::Z,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AdjacencyRule {
-    pub kind: AdjacencyRuleKind,
-    pub module_low: u8,
-    pub module_high: u8,
-}
-
-impl From<AdjacencyRule> for Adjacency {
-    fn from(rule: AdjacencyRule) -> Self {
-        Self {
-            kind: rule.kind.into(),
-            module_low: rule.module_low,
-            module_high: rule.module_high,
-        }
-    }
-}
 
 /// An opaque handle to the Wave Function Collapse world state. Actually a
 /// pointer, but shhh!
@@ -193,6 +157,8 @@ pub unsafe extern "C" fn wfc_world_state_init_from(
     assert!(!wfc_world_state_handle_ptr.is_null());
     *wfc_world_state_handle_ptr = wfc_world_state_handle;
 }
+
+// XXX: Add notion of compatibility to clone_from
 
 /// Copies data between two instances of Wave Function Collapse world state.
 ///
