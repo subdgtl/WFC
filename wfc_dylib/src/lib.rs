@@ -231,7 +231,7 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_set(
 
     // XXX: Bounds check.
 
-    world.set_slot_module([pos_x, pos_y, pos_z], usize::from(module), value > 0);
+    world.set_slot_module([pos_x, pos_y, pos_z], module, value > 0);
 }
 
 /// XXX: Docs
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_get(
 
     // XXX: Bounds check. Result with out var, or default value?
 
-    let value = world.slot_module([pos_x, pos_y, pos_z], usize::from(module));
+    let value = world.slot_module([pos_x, pos_y, pos_z], module);
     u32::from(value)
 }
 

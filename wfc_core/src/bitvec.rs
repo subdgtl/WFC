@@ -21,9 +21,9 @@ impl<const N: usize> BitVec<N> {
     //
     // TODO(yan): @Correctness Can we make the modules u16/u32 instead of usize?
 
-    pub const DATA_CAP: usize = N * u64::BITS as usize - Self::LEN_SEGMENT_SIZE;
+    pub const DATA_CAP: u16 = N as u16 * u64::BITS as u16 - Self::LEN_SEGMENT_SIZE;
 
-    const LEN_SEGMENT_SIZE: usize = find_len_segment_size(N);
+    const LEN_SEGMENT_SIZE: u16 = find_len_segment_size(N);
     const DATA_MASK: u64 = u64::MAX >> (64 - Self::LEN_SEGMENT_SIZE);
 
     /// Creates a new bit vector with all bits set to zero.
@@ -32,7 +32,7 @@ impl<const N: usize> BitVec<N> {
     }
 
     /// Returns whether the bit vector has a bit set.
-    pub fn contains(&self, index: usize) -> bool {
+    pub fn contains(&self, index: u16) -> bool {
         assert!(index < Self::DATA_CAP);
         let index = usize::from(index);
 
@@ -45,7 +45,7 @@ impl<const N: usize> BitVec<N> {
 
     /// Sets a bit in the vector to one. Returns [`true`] if the bit was not
     /// previously set.
-    pub fn add(&mut self, index: usize) -> bool {
+    pub fn add(&mut self, index: u16) -> bool {
         assert!(index < Self::DATA_CAP);
         let index = usize::from(index);
 
@@ -65,7 +65,7 @@ impl<const N: usize> BitVec<N> {
 
     /// Sets a bit in the vector to zero. Returns [`true`] if the bit was
     /// previously set.
-    pub fn remove(&mut self, index: usize) -> bool {
+    pub fn remove(&mut self, index: u16) -> bool {
         assert!(index < Self::DATA_CAP);
         let index = usize::from(index);
 
@@ -133,7 +133,7 @@ impl<const N: usize> fmt::Binary for BitVec<N> {
 }
 
 impl<'a, const N: usize> IntoIterator for &'a BitVec<N> {
-    type Item = usize;
+    type Item = u16;
     type IntoIter = BitVecIterator<'a, N>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -146,13 +146,13 @@ impl<'a, const N: usize> IntoIterator for &'a BitVec<N> {
 
 pub struct BitVecIterator<'a, const N: usize> {
     bitvec: &'a BitVec<N>,
-    next: usize,
+    next: u16,
 }
 
 impl<'a, const N: usize> Iterator for BitVecIterator<'a, N> {
-    type Item = usize;
+    type Item = u16;
 
-    fn next(&mut self) -> Option<usize> {
+    fn next(&mut self) -> Option<u16> {
         // TODO(yan): @Speed Try using leading zeros intrinsic to directly seek
         // to the next element. Ideally do this in a BitVec::first_after
         // function or similar.
@@ -204,7 +204,7 @@ impl<'a, const N: usize> Iterator for BitVecIterator<'a, N> {
     }
 }
 
-const fn find_len_segment_size(blk_count: usize) -> usize {
+const fn find_len_segment_size(blk_count: usize) -> u16 {
     // TODO(yan): This is kind of lazy, work out the formula?
 
     // Start at 6, as 2^6 is 64 - our block size.

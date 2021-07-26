@@ -12,8 +12,6 @@ use crate::convert::cast_u16;
 
 pub const MAX_MODULE_COUNT: u16 = 1014;
 
-const MAX_MODULE_COUNT_USIZE: usize = MAX_MODULE_COUNT as usize;
-
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AdjacencyRuleKind {
@@ -241,28 +239,25 @@ impl World {
 
         assert!(!adjacency_rules.is_empty());
 
-        let mut slot_module_count: usize = 0;
-        let mut slot_module_max: usize = 0;
+        let mut slot_module_count = 0;
+        let mut slot_module_max = 0;
 
         // TODO(yan): @Cleanup We have a max-sized slot here just for
         // validation. Volatile.
         let mut slot: BitVec<16> = BitVec::zeros();
 
         for adjacency in &adjacency_rules {
-            let low = usize::from(adjacency.module_low);
-            let high = usize::from(adjacency.module_high);
-
-            if low > slot_module_max {
-                slot_module_max = low;
+            if adjacency.module_low > slot_module_max {
+                slot_module_max = adjacency.module_low;
             }
-            if high > slot_module_max {
-                slot_module_max = high;
+            if adjacency.module_high > slot_module_max {
+                slot_module_max = adjacency.module_high;
             }
 
-            if slot.add(usize::from(adjacency.module_low)) {
+            if slot.add(adjacency.module_low) {
                 slot_module_count += 1;
             }
-            if slot.add(usize::from(adjacency.module_high)) {
+            if slot.add(adjacency.module_high) {
                 slot_module_count += 1;
             }
         }
@@ -306,15 +301,15 @@ impl World {
         self.inner.slot_count()
     }
 
-    pub fn slot_module_count(&self) -> usize {
+    pub fn slot_module_count(&self) -> u16 {
         self.inner.slot_module_count()
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: usize) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
         self.inner.slot_module(pos, module)
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: usize, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
         self.inner.set_slot_module(pos, module, value);
     }
 
@@ -377,6 +372,7 @@ enum WorldInner {
 
 impl WorldInner {
     pub fn clone_compatible(&self, other: &Self) -> bool {
+        #[allow(clippy::match_like_matches_macro)]
         match (self, other) {
             (Self::Size1(_), Self::Size1(_)) => true,
             (Self::Size2(_), Self::Size2(_)) => true,
@@ -440,7 +436,7 @@ impl WorldInner {
         }
     }
 
-    pub fn slot_module_count(&self) -> usize {
+    pub fn slot_module_count(&self) -> u16 {
         match self {
             Self::Size1(world) => world.slot_module_count(),
             Self::Size2(world) => world.slot_module_count(),
@@ -450,7 +446,7 @@ impl WorldInner {
         }
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: usize) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
         match self {
             Self::Size1(world) => world.slot_module(pos, module),
             Self::Size2(world) => world.slot_module(pos, module),
@@ -460,7 +456,7 @@ impl WorldInner {
         }
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: usize, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
         match self {
             Self::Size1(world) => world.set_slot_module(pos, module, value),
             Self::Size2(world) => world.set_slot_module(pos, module, value),
@@ -532,7 +528,7 @@ struct WorldInnerConst<const N: usize> {
 
     slots: Vec<BitVec<N>>,
     slots_modified: bool,
-    slot_module_count: usize,
+    slot_module_count: u16,
     slot_module_weights: Option<Vec<f32>>,
 
     /// Working memory for picking the nondeterministic slot with smallest
@@ -547,32 +543,29 @@ impl<const N: usize> WorldInnerConst<N> {
         assert!(dims[2] > 0);
         assert!(!adjacency_rules.is_empty());
 
-        let mut slot_module_count: usize = 0;
-        let mut slot_module_max: usize = 0;
+        let mut slot_module_count = 0;
+        let mut slot_module_max = 0;
 
         let mut slot = BitVec::zeros();
 
         for adjacency in &adjacency_rules {
-            let low = usize::from(adjacency.module_low);
-            let high = usize::from(adjacency.module_high);
-
-            if low > slot_module_max {
-                slot_module_max = low;
+            if adjacency.module_low > slot_module_max {
+                slot_module_max = adjacency.module_low;
             }
-            if high > slot_module_max {
-                slot_module_max = high;
+            if adjacency.module_high > slot_module_max {
+                slot_module_max = adjacency.module_high;
             }
 
-            if slot.add(usize::from(adjacency.module_low)) {
+            if slot.add(adjacency.module_low) {
                 slot_module_count += 1;
             }
-            if slot.add(usize::from(adjacency.module_high)) {
+            if slot.add(adjacency.module_high) {
                 slot_module_count += 1;
             }
         }
 
-        assert!(slot_module_count <= MAX_MODULE_COUNT_USIZE);
-        assert!(slot_module_max < MAX_MODULE_COUNT_USIZE);
+        assert!(slot_module_count <= MAX_MODULE_COUNT);
+        assert!(slot_module_max < MAX_MODULE_COUNT);
 
         assert!(slot_module_max + 1 == slot_module_count);
 
@@ -580,7 +573,7 @@ impl<const N: usize> WorldInnerConst<N> {
         let slots = vec![slot; slot_count];
 
         let slot_module_weights = if features.contains_any_weighted() {
-            Some(vec![1.0; slot_count * slot_module_count])
+            Some(vec![1.0; slot_count * usize::from(slot_module_count)])
         } else {
             None
         };
@@ -623,23 +616,23 @@ impl<const N: usize> WorldInnerConst<N> {
         self.slots.len()
     }
 
-    pub fn slot_module_count(&self) -> usize {
+    pub fn slot_module_count(&self) -> u16 {
         self.slot_module_count
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: usize) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
         let index = position_to_index(self.dims, pos);
-        self.slots[index].contains(usize::from(module))
+        self.slots[index].contains(module)
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: usize, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
         let index = position_to_index(self.dims, pos);
         let slot = &mut self.slots[index];
 
         if value {
-            slot.add(usize::from(module));
+            slot.add(module);
         } else {
-            slot.remove(usize::from(module));
+            slot.remove(module);
         }
 
         self.slots_modified = true;
@@ -661,16 +654,18 @@ impl<const N: usize> WorldInnerConst<N> {
     }
 
     pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
-        assert_eq!(weights.len(), self.slot_module_count);
+        let slot_module_count = usize::from(self.slot_module_count);
+        assert_eq!(weights.len(), slot_module_count);
+
         for weight in weights {
             assert!(weight.is_normal() && weight.is_sign_positive());
         }
 
         if let Some(slot_module_weights) = &mut self.slot_module_weights {
-            let index_base = self.slot_module_count * position_to_index(self.dims, pos);
+            let index_base = slot_module_count * position_to_index(self.dims, pos);
 
             let module_weights =
-                &mut slot_module_weights[index_base..index_base + self.slot_module_count];
+                &mut slot_module_weights[index_base..index_base + slot_module_count];
             module_weights.copy_from_slice(weights);
         }
     }
@@ -698,7 +693,8 @@ impl<const N: usize> WorldInnerConst<N> {
                 let mut sum_weights = 0.0;
                 let mut sum_weight_log_weights = 0.0;
                 for module in slot {
-                    let weight_index = self.slot_module_count * i + usize::from(module);
+                    let weight_index =
+                        usize::from(self.slot_module_count) * i + usize::from(module);
                     let weight = slot_module_weights[weight_index];
                     sum_weights += weight;
                     sum_weight_log_weights += weight * weight.ln();
@@ -740,8 +736,9 @@ impl<const N: usize> WorldInnerConst<N> {
             // possibilities from the slot.
             let chosen_module = if self.features.has_weighted_observation() {
                 let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
-                let index_base = self.slot_module_count * min_entropy_slot_index;
-                let weights = &slot_module_weights[index_base..index_base + self.slot_module_count];
+                let index_base = usize::from(self.slot_module_count) * min_entropy_slot_index;
+                let weights = &slot_module_weights
+                    [index_base..index_base + usize::from(self.slot_module_count)];
 
                 choose_module_weighted(rand64, &min_entropy_slot, weights)
             } else {
@@ -837,18 +834,16 @@ impl<const N: usize> WorldInnerConst<N> {
                         .filter(|adj| adj.kind == AdjacencyRuleKind::from(s.search_direction))
                         .filter(|adj| {
                             if s.search_direction.is_positive() {
-                                slot_prev.contains(usize::from(adj.module_low))
-                                    && slot.contains(usize::from(adj.module_high))
+                                slot_prev.contains(adj.module_low) && slot.contains(adj.module_high)
                             } else {
-                                slot_prev.contains(usize::from(adj.module_high))
-                                    && slot.contains(usize::from(adj.module_low))
+                                slot_prev.contains(adj.module_high) && slot.contains(adj.module_low)
                             }
                         })
                     {
                         if s.search_direction.is_positive() {
-                            new_slot.add(usize::from(adj.module_high));
+                            new_slot.add(adj.module_high);
                         } else {
-                            new_slot.add(usize::from(adj.module_low));
+                            new_slot.add(adj.module_low);
                         }
                     }
 
@@ -1021,7 +1016,7 @@ fn choose_slot(rng: &mut Rand64, slots: &[usize]) -> usize {
     slots[index]
 }
 
-fn choose_module<const N: usize>(rng: &mut Rand64, slot: &BitVec<N>) -> usize {
+fn choose_module<const N: usize>(rng: &mut Rand64, slot: &BitVec<N>) -> u16 {
     assert!(slot.len() > 0);
 
     let rand_num = rng.rand_u64() as usize;
@@ -1033,9 +1028,9 @@ fn choose_module_weighted<const N: usize>(
     rng: &mut Rand64,
     slot: &BitVec<N>,
     weights: &[f32],
-) -> usize {
+) -> u16 {
     assert!(slot.len() > 0);
-    assert!(weights.len() <= MAX_MODULE_COUNT_USIZE);
+    assert!(weights.len() <= usize::from(MAX_MODULE_COUNT));
 
     // The following search over accumulated weights is ok and the unwraps
     // should never panic. This is because when we compute cummulative weights,
@@ -1051,10 +1046,10 @@ fn choose_module_weighted<const N: usize>(
     // reason, we track whether we have already visited a present module.
 
     let mut cummulative_weight: f32 = 0.0;
-    let mut cummulative_weights: ArrayVec<f32, MAX_MODULE_COUNT_USIZE> = ArrayVec::new();
+    let mut cummulative_weights: ArrayVec<f32, { MAX_MODULE_COUNT as usize }> = ArrayVec::new();
 
     for (i, weight) in weights.iter().enumerate() {
-        if slot.contains(i) {
+        if slot.contains(cast_u16(i)) {
             cummulative_weight += weight;
         }
 
@@ -1080,7 +1075,7 @@ fn choose_module_weighted<const N: usize>(
         })
         .unwrap();
 
-    index
+    cast_u16(index)
 }
 
 fn prev_position_saturating(pos: u16, dim: u16) -> u16 {
@@ -1093,8 +1088,8 @@ fn next_position_saturating(pos: u16, dim: u16) -> u16 {
     pos.saturating_add(1).min(dim - 1)
 }
 
-fn find_block_size_for_module_count(module_count: usize) -> Option<usize> {
-    if module_count > MAX_MODULE_COUNT_USIZE {
+fn find_block_size_for_module_count(module_count: u16) -> Option<usize> {
+    if module_count > MAX_MODULE_COUNT {
         return None;
     }
 
