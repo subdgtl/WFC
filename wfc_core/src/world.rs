@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::error;
 use std::fmt;
 
 use arrayvec::ArrayVec;
@@ -198,7 +199,6 @@ impl fmt::Display for WorldStatus {
     }
 }
 
-// XXX: Error impls
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WorldNewError {
     ModuleCountTooHigh,
@@ -206,6 +206,19 @@ pub enum WorldNewError {
     RulesEmpty,
     RulesHaveGaps,
 }
+
+impl fmt::Display for WorldNewError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::ModuleCountTooHigh => write!(f, "Module count too high"),
+            Self::WorldDimensionsZero => write!(f, "World dimensions zero"),
+            Self::RulesEmpty => write!(f, "Rules empty"),
+            Self::RulesHaveGaps => write!(f, "Rules have gaps"),
+        }
+    }
+}
+
+impl error::Error for WorldNewError {}
 
 #[derive(Clone)]
 pub struct World {

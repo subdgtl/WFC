@@ -14,6 +14,8 @@ impl<const N: usize> BitVec<N> {
     // TODO(yan): @Correctness This implementation completely breaks down once
     // DATA_CAP reaches 2^64 (or N reaches 2^60), because len currently can't span
     // multiple blocks. In practice, this is a lot of memory and won't happen.
+    //
+    // TODO(yan): @Correctness Can we make the modules u16/u32 instead of usize?
 
     pub const DATA_CAP: usize = N * u64::BITS as usize - Self::LEN_SEGMENT_SIZE;
 
@@ -165,9 +167,6 @@ impl<'a, const N: usize> Iterator for BitVecIterator<'a, N> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // XXX: Can we cast less? If we could be u16, we could widen to u32 and
-        // usize as needed without fear.
-
         // Size hints are computed using the count_ones intrinsic on the u64
         // components of the bit vector. To not count bits we already iterated
         // over, we mask them. Masks are computed from the the index to the bit
