@@ -104,7 +104,7 @@ fn main() {
             }
         };
 
-        let mut world = World::new(dims, import_result.adjacencies, Features::empty());
+        let mut world = World::new(dims, import_result.adjacencies, Features::empty()).unwrap();
 
         let buf_reader = BufReader::new(world_state_file);
         if let Err(err) =
@@ -116,7 +116,7 @@ fn main() {
 
         // Since we are importing a custom world state, we can not be sure all
         // adjacency rule constraints are initially satisfied.
-        let (world_changed, world_status) = world.ensure_constraints();
+        let (world_changed, world_status) = world.canonicalize();
 
         if world_changed {
             eprintln!("WARNING: Provided world state does not initially satisfy adjacency rules");
@@ -134,7 +134,7 @@ fn main() {
 
         world
     } else {
-        World::new(dims, import_result.adjacencies, Features::empty())
+        World::new(dims, import_result.adjacencies, Features::empty()).unwrap()
     };
 
     let mut world = initial_world.clone();

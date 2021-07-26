@@ -293,6 +293,10 @@ impl World {
         self.inner.dims()
     }
 
+    pub fn module_count(&self) -> u16 {
+        self.inner.module_count()
+    }
+
     pub fn slots_modified(&self) -> bool {
         self.inner.slots_modified()
     }
@@ -301,12 +305,12 @@ impl World {
         self.inner.slot_count()
     }
 
-    pub fn slot_module_count(&self) -> u16 {
-        self.inner.slot_module_count()
-    }
-
     pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
         self.inner.slot_module(pos, module)
+    }
+
+    pub fn slot_module_count(&self, pos: [u16; 3]) -> usize {
+        self.inner.slot_module_count(pos)
     }
 
     pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
@@ -416,6 +420,16 @@ impl WorldInner {
         }
     }
 
+    pub fn module_count(&self) -> u16 {
+        match self {
+            Self::Size1(world) => world.module_count(),
+            Self::Size2(world) => world.module_count(),
+            Self::Size4(world) => world.module_count(),
+            Self::Size8(world) => world.module_count(),
+            Self::Size16(world) => world.module_count(),
+        }
+    }
+
     pub fn slots_modified(&self) -> bool {
         match self {
             Self::Size1(world) => world.slots_modified(),
@@ -436,16 +450,6 @@ impl WorldInner {
         }
     }
 
-    pub fn slot_module_count(&self) -> u16 {
-        match self {
-            Self::Size1(world) => world.slot_module_count(),
-            Self::Size2(world) => world.slot_module_count(),
-            Self::Size4(world) => world.slot_module_count(),
-            Self::Size8(world) => world.slot_module_count(),
-            Self::Size16(world) => world.slot_module_count(),
-        }
-    }
-
     pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
         match self {
             Self::Size1(world) => world.slot_module(pos, module),
@@ -453,6 +457,16 @@ impl WorldInner {
             Self::Size4(world) => world.slot_module(pos, module),
             Self::Size8(world) => world.slot_module(pos, module),
             Self::Size16(world) => world.slot_module(pos, module),
+        }
+    }
+
+    pub fn slot_module_count(&self, pos: [u16; 3]) -> usize {
+        match self {
+            Self::Size1(world) => world.slot_module_count(pos),
+            Self::Size2(world) => world.slot_module_count(pos),
+            Self::Size4(world) => world.slot_module_count(pos),
+            Self::Size8(world) => world.slot_module_count(pos),
+            Self::Size16(world) => world.slot_module_count(pos),
         }
     }
 
@@ -526,9 +540,10 @@ struct WorldInnerConst<const N: usize> {
     adjacency_rules: Vec<AdjacencyRule>,
     features: Features,
 
+    module_count: u16,
+
     slots: Vec<BitVec<N>>,
     slots_modified: bool,
-    slot_module_count: u16,
     slot_module_weights: Option<Vec<f32>>,
 
     /// Working memory for picking the nondeterministic slot with smallest
@@ -543,37 +558,37 @@ impl<const N: usize> WorldInnerConst<N> {
         assert!(dims[2] > 0);
         assert!(!adjacency_rules.is_empty());
 
-        let mut slot_module_count = 0;
-        let mut slot_module_max = 0;
+        let mut module_count = 0;
+        let mut module_max = 0;
 
         let mut slot = BitVec::zeros();
 
         for adjacency in &adjacency_rules {
-            if adjacency.module_low > slot_module_max {
-                slot_module_max = adjacency.module_low;
+            if adjacency.module_low > module_max {
+                module_max = adjacency.module_low;
             }
-            if adjacency.module_high > slot_module_max {
-                slot_module_max = adjacency.module_high;
+            if adjacency.module_high > module_max {
+                module_max = adjacency.module_high;
             }
 
             if slot.add(adjacency.module_low) {
-                slot_module_count += 1;
+                module_count += 1;
             }
             if slot.add(adjacency.module_high) {
-                slot_module_count += 1;
+                module_count += 1;
             }
         }
 
-        assert!(slot_module_count <= MAX_MODULE_COUNT);
-        assert!(slot_module_max < MAX_MODULE_COUNT);
+        assert!(module_count <= MAX_MODULE_COUNT);
+        assert!(module_max < MAX_MODULE_COUNT);
 
-        assert!(slot_module_max + 1 == slot_module_count);
+        assert!(module_max + 1 == module_count);
 
         let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
         let slots = vec![slot; slot_count];
 
         let slot_module_weights = if features.contains_any_weighted() {
-            Some(vec![1.0; slot_count * usize::from(slot_module_count)])
+            Some(vec![1.0; slot_count * usize::from(module_count)])
         } else {
             None
         };
@@ -583,9 +598,10 @@ impl<const N: usize> WorldInnerConst<N> {
             adjacency_rules,
             features,
 
+            module_count,
+
             slots,
             slots_modified: false,
-            slot_module_count,
             slot_module_weights,
 
             min_entropy_slots: Vec::with_capacity(slot_count),
@@ -601,11 +617,15 @@ impl<const N: usize> WorldInnerConst<N> {
         self.slot_module_weights
             .clone_from(&other.slot_module_weights);
 
-        self.slot_module_count = other.slot_module_count;
+        self.module_count = other.module_count;
     }
 
     pub fn dims(&self) -> [u16; 3] {
         self.dims
+    }
+
+    pub fn module_count(&self) -> u16 {
+        self.module_count
     }
 
     pub fn slots_modified(&self) -> bool {
@@ -616,13 +636,14 @@ impl<const N: usize> WorldInnerConst<N> {
         self.slots.len()
     }
 
-    pub fn slot_module_count(&self) -> u16 {
-        self.slot_module_count
-    }
-
     pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
         let index = position_to_index(self.dims, pos);
         self.slots[index].contains(module)
+    }
+
+    pub fn slot_module_count(&self, pos: [u16; 3]) -> usize {
+        let index = position_to_index(self.dims, pos);
+        self.slots[index].len()
     }
 
     pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
@@ -642,7 +663,7 @@ impl<const N: usize> WorldInnerConst<N> {
         let index = position_to_index(self.dims, pos);
         let slot = &mut self.slots[index];
 
-        for module in 0..self.slot_module_count {
+        for module in 0..self.module_count {
             if value {
                 slot.add(module);
             } else {
@@ -654,18 +675,17 @@ impl<const N: usize> WorldInnerConst<N> {
     }
 
     pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
-        let slot_module_count = usize::from(self.slot_module_count);
-        assert_eq!(weights.len(), slot_module_count);
+        let module_count = usize::from(self.module_count);
+        assert_eq!(weights.len(), module_count);
 
         for weight in weights {
             assert!(weight.is_normal() && weight.is_sign_positive());
         }
 
         if let Some(slot_module_weights) = &mut self.slot_module_weights {
-            let index_base = slot_module_count * position_to_index(self.dims, pos);
+            let index_base = module_count * position_to_index(self.dims, pos);
 
-            let module_weights =
-                &mut slot_module_weights[index_base..index_base + slot_module_count];
+            let module_weights = &mut slot_module_weights[index_base..index_base + module_count];
             module_weights.copy_from_slice(weights);
         }
     }
@@ -693,8 +713,7 @@ impl<const N: usize> WorldInnerConst<N> {
                 let mut sum_weights = 0.0;
                 let mut sum_weight_log_weights = 0.0;
                 for module in slot {
-                    let weight_index =
-                        usize::from(self.slot_module_count) * i + usize::from(module);
+                    let weight_index = usize::from(self.module_count) * i + usize::from(module);
                     let weight = slot_module_weights[weight_index];
                     sum_weights += weight;
                     sum_weight_log_weights += weight * weight.ln();
@@ -736,9 +755,9 @@ impl<const N: usize> WorldInnerConst<N> {
             // possibilities from the slot.
             let chosen_module = if self.features.has_weighted_observation() {
                 let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
-                let index_base = usize::from(self.slot_module_count) * min_entropy_slot_index;
-                let weights = &slot_module_weights
-                    [index_base..index_base + usize::from(self.slot_module_count)];
+                let index_base = usize::from(self.module_count) * min_entropy_slot_index;
+                let weights =
+                    &slot_module_weights[index_base..index_base + usize::from(self.module_count)];
 
                 choose_module_weighted(rand64, &min_entropy_slot, weights)
             } else {
