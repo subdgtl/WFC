@@ -6,7 +6,11 @@ use crate::convert::{cast_u32, cast_usize};
 pub struct BitVec<const N: usize> {
     /// The data and length of the bit vector.
     ///
-    /// XXX: Doc where is data and where is len.
+    /// Because [`u64::count_ones`] showed quite high on our profiles, we
+    /// instead cache length in the data itself. The lenght is stored in the
+    /// most significant bits of the last u64 and is large enough to address the
+    /// number of bits in the bitvec. E.g. for 4 64-bit blocks, the length takes
+    /// up 8 bits.
     data: [u64; N],
 }
 

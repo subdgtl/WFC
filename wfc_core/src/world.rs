@@ -340,10 +340,22 @@ impl World {
         self.inner.canonicalize()
     }
 
+    /// Runs one observation and propagates constraints.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any slots are in the modified state. Use
+    /// [`Self::canonicalize`] to make them canonical.
     pub fn observe(&mut self, rng: &mut Rng) -> (bool, WorldStatus) {
         self.inner.observe(rng)
     }
 
+    /// Computes the world status.
+    ///
+    /// # Warning
+    ///
+    /// If any slots are in modified state (i.e. the world is possibly not
+    /// canonical), the status might be incorrect.
     pub fn world_status(&self) -> WorldStatus {
         self.inner.world_status()
     }
@@ -663,7 +675,6 @@ impl<const N: usize> WorldInnerConst<N> {
         }
     }
 
-    // XXX: Document panics on modified world
     pub fn observe(&mut self, rng: &mut Rng) -> (bool, WorldStatus) {
         assert!(!self.slots_modified);
 
@@ -750,9 +761,6 @@ impl<const N: usize> WorldInnerConst<N> {
         }
     }
 
-    // XXX: Document that calling this if slots are modified is not accurate and
-    // nondeterministic can become deterministic, and deterministic can become
-    // contradictory.
     pub fn world_status(&self) -> WorldStatus {
         let mut lt1 = false;
         let mut gt1 = false;
