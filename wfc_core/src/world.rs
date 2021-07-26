@@ -198,10 +198,11 @@ impl fmt::Display for WorldStatus {
     }
 }
 
+// XXX: Error impls
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WorldNewError {
-    WorldDimensionsZero,
     ModuleCountTooHigh,
+    WorldDimensionsZero,
     RulesEmpty,
     RulesHaveGaps,
 }
@@ -284,6 +285,10 @@ impl World {
         self.inner.dims()
     }
 
+    pub fn slots_modified(&self) -> bool {
+        self.inner.slots_modified()
+    }
+
     pub fn slot_count(&self) -> usize {
         self.inner.slot_count()
     }
@@ -292,11 +297,11 @@ impl World {
         self.inner.slot_module_count()
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: usize) -> bool {
         self.inner.slot_module(pos, module)
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: usize, value: bool) {
         self.inner.set_slot_module(pos, module, value);
     }
 
@@ -318,8 +323,8 @@ impl World {
         self.inner.set_slot_module_weights(pos, weights);
     }
 
-    pub fn ensure_constraints(&mut self) -> (bool, WorldStatus) {
-        self.inner.ensure_constraints()
+    pub fn canonicalize(&mut self) -> (bool, WorldStatus) {
+        self.inner.canonicalize()
     }
 
     pub fn observe(&mut self, rng: &mut Rng) -> (bool, WorldStatus) {
@@ -390,6 +395,16 @@ impl WorldInner {
         }
     }
 
+    pub fn slots_modified(&self) -> bool {
+        match self {
+            Self::Size1(world) => world.slots_modified(),
+            Self::Size2(world) => world.slots_modified(),
+            Self::Size4(world) => world.slots_modified(),
+            Self::Size8(world) => world.slots_modified(),
+            Self::Size16(world) => world.slots_modified(),
+        }
+    }
+
     pub fn slot_count(&self) -> usize {
         match self {
             Self::Size1(world) => world.slot_count(),
@@ -410,7 +425,7 @@ impl WorldInner {
         }
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: usize) -> bool {
         match self {
             Self::Size1(world) => world.slot_module(pos, module),
             Self::Size2(world) => world.slot_module(pos, module),
@@ -420,7 +435,7 @@ impl WorldInner {
         }
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: usize, value: bool) {
         match self {
             Self::Size1(world) => world.set_slot_module(pos, module, value),
             Self::Size2(world) => world.set_slot_module(pos, module, value),
@@ -450,13 +465,13 @@ impl WorldInner {
         }
     }
 
-    pub fn ensure_constraints(&mut self) -> (bool, WorldStatus) {
+    pub fn canonicalize(&mut self) -> (bool, WorldStatus) {
         match self {
-            Self::Size1(world) => world.ensure_constraints(),
-            Self::Size2(world) => world.ensure_constraints(),
-            Self::Size4(world) => world.ensure_constraints(),
-            Self::Size8(world) => world.ensure_constraints(),
-            Self::Size16(world) => world.ensure_constraints(),
+            Self::Size1(world) => world.canonicalize(),
+            Self::Size2(world) => world.canonicalize(),
+            Self::Size4(world) => world.canonicalize(),
+            Self::Size8(world) => world.canonicalize(),
+            Self::Size16(world) => world.canonicalize(),
         }
     }
 
@@ -491,6 +506,7 @@ struct WorldInnerConst<const N: usize> {
     features: Features,
 
     slots: Vec<BitVec<N>>,
+    slots_modified: bool,
     slot_module_count: usize,
     slot_module_weights: Option<Vec<f32>>,
 
@@ -550,6 +566,7 @@ impl<const N: usize> WorldInnerConst<N> {
             features,
 
             slots,
+            slots_modified: false,
             slot_module_count,
             slot_module_weights,
 
@@ -573,6 +590,10 @@ impl<const N: usize> WorldInnerConst<N> {
         self.dims
     }
 
+    pub fn slots_modified(&self) -> bool {
+        self.slots_modified
+    }
+
     pub fn slot_count(&self) -> usize {
         self.slots.len()
     }
@@ -581,12 +602,12 @@ impl<const N: usize> WorldInnerConst<N> {
         self.slot_module_count
     }
 
-    pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
+    pub fn slot_module(&self, pos: [u16; 3], module: usize) -> bool {
         let index = position_to_index(self.dims, pos);
         self.slots[index].contains(usize::from(module))
     }
 
-    pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
+    pub fn set_slot_module(&mut self, pos: [u16; 3], module: usize, value: bool) {
         let index = position_to_index(self.dims, pos);
         let slot = &mut self.slots[index];
 
@@ -595,6 +616,8 @@ impl<const N: usize> WorldInnerConst<N> {
         } else {
             slot.remove(usize::from(module));
         }
+
+        self.slots_modified = true;
     }
 
     pub fn set_slot_modules(&mut self, pos: [u16; 3], value: bool) {
@@ -608,6 +631,8 @@ impl<const N: usize> WorldInnerConst<N> {
                 slot.remove(module);
             }
         }
+
+        self.slots_modified = true;
     }
 
     pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
@@ -625,41 +650,10 @@ impl<const N: usize> WorldInnerConst<N> {
         }
     }
 
-    pub fn ensure_constraints(&mut self) -> (bool, WorldStatus) {
-        let mut world_changed = false;
-
-        for i in 0..self.slots.len() {
-            let (changed, contradiction) = self.propagate_constraints(i);
-
-            world_changed |= changed;
-
-            // Do not continue for worlds where there is nothing more to do,
-            // otherwise we would trigger asserts.
-
-            // For some contradictions, we know immediately ...
-            if contradiction {
-                return (world_changed, WorldStatus::Contradiction);
-            }
-
-            // ... but we still need to do a comprehensive check to find
-            // contradictions elsewhere. We only return immediately for
-            // contradictions. Deterministic or Nondeterministic don't mean
-            // anything yet, because we may still remove more modules, possibly
-            // transitioning Nondeterministic to Deterministic or Deterministic
-            // to Contractiction.
-            match self.world_status() {
-                WorldStatus::Nondeterministic => (),
-                WorldStatus::Deterministic => (),
-                WorldStatus::Contradiction => {
-                    return (world_changed, WorldStatus::Contradiction);
-                }
-            }
-        }
-
-        (world_changed, self.world_status())
-    }
-
+    // XXX: Document panics on modified world
     pub fn observe(&mut self, rng: &mut Rng) -> (bool, WorldStatus) {
+        assert!(!self.slots_modified);
+
         let mut min_entropy = f32::INFINITY;
         self.min_entropy_slots.clear();
 
@@ -743,6 +737,9 @@ impl<const N: usize> WorldInnerConst<N> {
         }
     }
 
+    // XXX: Document that calling this if slots are modified is not accurate and
+    // nondeterministic can become deterministic, and deterministic can become
+    // contradictory.
     pub fn world_status(&self) -> WorldStatus {
         let mut lt1 = false;
         let mut gt1 = false;
@@ -763,6 +760,24 @@ impl<const N: usize> WorldInnerConst<N> {
             (false, true) => WorldStatus::Nondeterministic,
             (true, _) => WorldStatus::Contradiction,
         }
+    }
+
+    pub fn canonicalize(&mut self) -> (bool, WorldStatus) {
+        let mut world_changed = false;
+
+        for i in 0..self.slots.len() {
+            // Even if propagation tells us there is a contradiction, we
+            // continue until we canonicalize the whole world. This is because
+            // we to set slots_modified = false.
+
+            let (changed, _) = self.propagate_constraints(i);
+
+            world_changed |= changed;
+        }
+
+        self.slots_modified = false;
+
+        (world_changed, self.world_status())
     }
 
     fn propagate_constraints(&mut self, slot_index: usize) -> (bool, bool) {
@@ -818,16 +833,26 @@ impl<const N: usize> WorldInnerConst<N> {
 
                     let slot_len = slot.len();
                     let new_slot_len = new_slot.len();
-                    assert!(slot_len > 0);
-                    assert!(slot_len >= new_slot_len);
 
+                    assert!(slot_len >= new_slot_len);
                     self.slots[s.slot_index] = new_slot;
 
-                    if new_slot_len == 0 {
+                    if slot_len == 0 {
+                        // The slot was already contradictory, stop propagating
+                        // this branch. This can only happen when
+                        // propagate_constraints is called from canonicalize,
+                        // where it is called on every slot regardless of
+                        // whether previous contradictions were found.
+                        //
+                        // We can therefore terminate here, because we know
+                        // canonicalize will eventually call propagate
+                        // constraints on every slot.
+                        contradiction = true;
+                        s.search_state = SearchState::Done;
+                    } else if new_slot_len == 0 {
+                        // We removed everything, stop the current observation iteration
                         changed = true;
                         contradiction = true;
-
-                        // We removed everything, stop the current observation iteration
                         s.search_state = SearchState::Done;
                     } else if slot_len == new_slot_len {
                         // We didn't remove anything, stop propagating this branch
@@ -835,9 +860,8 @@ impl<const N: usize> WorldInnerConst<N> {
                     } else {
                         assert!(slot_len > new_slot_len);
 
-                        changed = true;
-
                         // We removed something, propagate further
+                        changed = true;
                         s.search_state = SearchState::SearchLeft;
                     }
                 }
