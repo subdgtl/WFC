@@ -222,7 +222,6 @@ impl World {
             return Err(WorldNewError::WorldDimensionsZero);
         }
 
-        // XXX: Do we need this? Or should we result it? Doesn't it just mean a contradictory world?
         if adjacency_rules.is_empty() {
             return Err(WorldNewError::RulesEmpty);
         }
@@ -232,7 +231,8 @@ impl World {
         let mut slot_module_count: usize = 0;
         let mut slot_module_max: usize = 0;
 
-        // XXX: We have a max-sized slot here just for validation. Can we do better?
+        // TODO(yan): @Cleanup We have a max-sized slot here just for
+        // validation. Volatile.
         let mut slot: BitVec<16> = BitVec::zeros();
 
         for adjacency in &adjacency_rules {

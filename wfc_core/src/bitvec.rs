@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::convert::{cast_u32, cast_usize};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BitVec<const N: usize> {
     /// The data and length of the bit vector.
@@ -78,7 +80,7 @@ impl<const N: usize> BitVec<N> {
     /// Returns the number of ones in the binary representation of the bit
     /// vector.
     pub fn len(&self) -> usize {
-        (self.data[N - 1] >> Self::LEN_SEGMENT_SIZE) as usize
+        cast_usize(self.data[N - 1] >> Self::LEN_SEGMENT_SIZE)
     }
 
     /// Sets all bits in the bit vector to zero.
@@ -174,11 +176,11 @@ impl<'a, const N: usize> Iterator for BitVecIterator<'a, N> {
         // TODO(yan): @Correctness self.next likely won't be larger than than
         // u32, but we'd love to prove this statically. Unfortunately, we need
         // to bound N with usize, because it's a parameter for array size.
-        let next = self.next as u32;
+        let next = cast_u32(self.next);
 
         let mut size = 0;
         for i in 0..N - 1 {
-            let s = next.saturating_sub(64 * i as u32);
+            let s = next.saturating_sub(64 * cast_u32(i));
             let m = u64::MAX.checked_shl(s).unwrap_or(0);
             let c = (m & self.bitvec.data[i]).count_ones();
 
@@ -186,14 +188,16 @@ impl<'a, const N: usize> Iterator for BitVecIterator<'a, N> {
         }
 
         {
-            let s = next.saturating_sub(64 * (N as u32 - 1));
+            let s = next.saturating_sub(64 * (cast_u32(N) - 1));
             let m = u64::MAX.checked_shl(s).unwrap_or(0) & BitVec::<N>::DATA_MASK;
             let c = (m & self.bitvec.data[N - 1]).count_ones();
 
             size += c;
         }
 
-        (size as usize, Some(size as usize))
+        let size_usize = cast_usize(size);
+
+        (size_usize, Some(size_usize))
     }
 }
 
