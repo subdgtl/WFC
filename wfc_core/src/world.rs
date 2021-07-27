@@ -242,34 +242,34 @@ impl World {
 
         assert!(!adjacency_rules.is_empty());
 
-        let mut slot_module_count = 0;
-        let mut slot_module_max = 0;
+        let mut module_count = 0;
+        let mut module_max = 0;
 
         // TODO(yan): @Cleanup We have a max-sized slot here just for
         // validation. Volatile.
         let mut slot: BitVec<16> = BitVec::zeros();
 
         for adjacency in &adjacency_rules {
-            if adjacency.module_low > slot_module_max {
-                slot_module_max = adjacency.module_low;
+            if adjacency.module_low > module_max {
+                module_max = adjacency.module_low;
             }
-            if adjacency.module_high > slot_module_max {
-                slot_module_max = adjacency.module_high;
+            if adjacency.module_high > module_max {
+                module_max = adjacency.module_high;
             }
 
             if slot.add(adjacency.module_low) {
-                slot_module_count += 1;
+                module_count += 1;
             }
             if slot.add(adjacency.module_high) {
-                slot_module_count += 1;
+                module_count += 1;
             }
         }
 
-        if slot_module_count != slot_module_max + 1 {
+        if module_count != module_max + 1 {
             return Err(WorldNewError::RulesHaveGaps);
         }
 
-        let block_size = find_block_size_for_module_count(slot_module_count)
+        let block_size = find_block_size_for_module_count(module_count)
             .ok_or(WorldNewError::ModuleCountTooHigh)?;
 
         let inner = match block_size {
