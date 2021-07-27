@@ -269,10 +269,10 @@ impl World {
             return Err(WorldNewError::RulesHaveGaps);
         }
 
-        let block_size = find_block_size_for_module_count(module_count)
+        let block_count = find_block_count_for_module_count(module_count)
             .ok_or(WorldNewError::ModuleCountTooHigh)?;
 
-        let inner = match block_size {
+        let inner = match block_count {
             1 => WorldInner::Size1(WorldInnerConst::new(dims, adjacency_rules, features)),
             2 => WorldInner::Size2(WorldInnerConst::new(dims, adjacency_rules, features)),
             4 => WorldInner::Size4(WorldInnerConst::new(dims, adjacency_rules, features)),
@@ -377,34 +377,35 @@ impl World {
     }
 }
 
-fn find_block_size_for_module_count(module_count: u16) -> Option<usize> {
+// XXX: Write tests for this
+fn find_block_count_for_module_count(module_count: u16) -> Option<usize> {
     if module_count > MAX_MODULE_COUNT {
         return None;
     }
 
     let npot = module_count.next_power_of_two();
-    assert!(npot <= 1024);
+    assert!(npot <= MAX_MODULE_COUNT.next_power_of_two());
 
-    let block_size = {
-        let mut size = 1;
+    let block_count = {
+        let mut count = 1;
         let mut n = 64;
 
         loop {
-            let new_size = size * 2;
-            let new_n = n * n;
+            let new_count = count * 2;
+            let new_n = n * 2;
 
             if new_n < npot {
-                size = new_size;
+                count = new_count;
                 n = new_n;
             } else {
                 break;
             }
         }
 
-        size
+        count
     };
 
-    Some(block_size)
+    Some(block_count)
 }
 
 mod worldinner {

@@ -16,15 +16,14 @@ pub struct BitVec<const N: usize> {
 
 impl<const N: usize> BitVec<N> {
     // TODO(yan): @Correctness This implementation completely breaks down once
-    // DATA_CAP reaches 2^64 (or N reaches 2^60), because len currently can't span
-    // multiple blocks. In practice, this is a lot of memory and won't happen.
-    //
-    // TODO(yan): @Correctness Can we make the modules u16/u32 instead of usize?
+    // LEN_SEGMENT_SIZE reaches 64, because len currently can't span multiple
+    // blocks. In practice, this is a lot of memory and won't happen.
 
-    pub const DATA_CAP: u16 = N as u16 * u64::BITS as u16 - Self::LEN_SEGMENT_SIZE;
+    pub const DATA_CAP: u16 = N as u16 * 64 - Self::LEN_SEGMENT_SIZE;
 
     const LEN_SEGMENT_SIZE: u16 = find_len_segment_size(N);
-    const DATA_MASK: u64 = u64::MAX >> (64 - Self::LEN_SEGMENT_SIZE);
+    const DATA_SEGMENT_SIZE: u16 = 64 - Self::LEN_SEGMENT_SIZE;
+    const DATA_MASK: u64 = u64::MAX >> Self::LEN_SEGMENT_SIZE;
 
     /// Creates a new bit vector with all bits set to zero.
     pub const fn zeros() -> Self {
@@ -86,7 +85,7 @@ impl<const N: usize> BitVec<N> {
     /// Returns the number of ones in the binary representation of the bit
     /// vector.
     pub fn len(&self) -> usize {
-        cast_usize(self.data[N - 1] >> Self::LEN_SEGMENT_SIZE)
+        cast_usize(self.data[N - 1] >> Self::DATA_SEGMENT_SIZE)
     }
 
     /// Sets all bits in the bit vector to zero.
@@ -102,21 +101,21 @@ impl<const N: usize> BitVec<N> {
     }
 
     fn inc_len(&mut self) {
-        let mut len = self.data[N - 1] >> Self::LEN_SEGMENT_SIZE;
+        let mut len = self.data[N - 1] >> Self::DATA_SEGMENT_SIZE;
         assert!(len < Self::DATA_CAP as u64);
 
         len += 1;
 
-        self.data[N - 1] = (self.data[N - 1] & Self::DATA_MASK) | (len << Self::LEN_SEGMENT_SIZE);
+        self.data[N - 1] = (self.data[N - 1] & Self::DATA_MASK) | (len << Self::DATA_SEGMENT_SIZE);
     }
 
     fn dec_len(&mut self) {
-        let mut len = self.data[N - 1] >> Self::LEN_SEGMENT_SIZE;
+        let mut len = self.data[N - 1] >> Self::DATA_SEGMENT_SIZE;
         assert!(len > 0);
 
         len -= 1;
 
-        self.data[N - 1] = (self.data[N - 1] & Self::DATA_MASK) | (len << Self::LEN_SEGMENT_SIZE)
+        self.data[N - 1] = (self.data[N - 1] & Self::DATA_MASK) | (len << Self::DATA_SEGMENT_SIZE)
     }
 }
 
@@ -204,6 +203,7 @@ impl<'a, const N: usize> Iterator for BitVecIterator<'a, N> {
     }
 }
 
+// XXX: Write tests for this
 const fn find_len_segment_size(blk_count: usize) -> u16 {
     // TODO(yan): This is kind of lazy, work out the formula?
 
