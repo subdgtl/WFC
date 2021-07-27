@@ -225,12 +225,12 @@ pub unsafe extern "C" fn wfc_world_state_clone_from(
 ///   [`wfc_world_state_init_from`] and not yet freed via
 ///   [`wfc_world_state_free`],
 #[no_mangle]
-pub extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldStateHandle) {
+pub unsafe extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldStateHandle) {
     if wfc_world_state_handle.0.is_null() {
         return;
     }
 
-    unsafe { Box::from_raw(wfc_world_state_handle.0) };
+    Box::from_raw(wfc_world_state_handle.0);
 }
 
 #[repr(u32)]
@@ -389,12 +389,12 @@ pub unsafe extern "C" fn wfc_rng_state_init(
 /// - `wfc_rng_state_handle` must be a valid handle created via
 ///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
 #[no_mangle]
-pub extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
+pub unsafe extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHandle) {
     if wfc_rng_state_handle.0.is_null() {
         return;
     }
 
-    unsafe { Box::from_raw(wfc_rng_state_handle.0) };
+    Box::from_raw(wfc_rng_state_handle.0);
 }
 
 #[repr(u32)]
