@@ -278,7 +278,6 @@ pub fn import_world_state<R: io::BufRead>(
                 }
 
                 let pos = [cast_u16(x), cast_u16(y), cast_u16(z)];
-                // XXX: Consider removing! This is the only usage of set_slot_modules.
                 world.set_slot_modules(pos, false);
                 for module in slot {
                     world.set_slot_module(pos, module, true);
