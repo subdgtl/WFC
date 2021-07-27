@@ -203,7 +203,6 @@ impl<'a, const N: usize> Iterator for BitVecIterator<'a, N> {
     }
 }
 
-// XXX: Write tests for this
 const fn find_len_segment_size(blk_count: usize) -> u16 {
     // TODO(yan): This is kind of lazy, work out the formula?
 
@@ -216,3 +215,40 @@ const fn find_len_segment_size(blk_count: usize) -> u16 {
 
     offset
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_len_segment_size() {
+        assert_eq!(find_len_segment_size(0), 6);
+
+        assert_eq!(find_len_segment_size(1), 6);
+
+        assert_eq!(find_len_segment_size(2), 7);
+
+        assert_eq!(find_len_segment_size(3), 8);
+        assert_eq!(find_len_segment_size(4), 8);
+
+        assert_eq!(find_len_segment_size(5), 9);
+        assert_eq!(find_len_segment_size(6), 9);
+        assert_eq!(find_len_segment_size(7), 9);
+        assert_eq!(find_len_segment_size(8), 9);
+
+        assert_eq!(find_len_segment_size(9), 10);
+        assert_eq!(find_len_segment_size(10), 10);
+        assert_eq!(find_len_segment_size(11), 10);
+        assert_eq!(find_len_segment_size(12), 10);
+        assert_eq!(find_len_segment_size(13), 10);
+        assert_eq!(find_len_segment_size(14), 10);
+        assert_eq!(find_len_segment_size(15), 10);
+        assert_eq!(find_len_segment_size(16), 10);
+
+        assert_eq!(find_len_segment_size(17), 11);
+        assert_eq!(find_len_segment_size(33), 12);
+        assert_eq!(find_len_segment_size(65), 13);
+        assert_eq!(find_len_segment_size(129), 14);
+    }
+}
+

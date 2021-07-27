@@ -377,35 +377,16 @@ impl World {
     }
 }
 
-// XXX: Write tests for this
+// TODO(yan): @Cleanup algorithmize this.
 fn find_block_count_for_module_count(module_count: u16) -> Option<usize> {
-    if module_count > MAX_MODULE_COUNT {
-        return None;
+    match module_count {
+        1..=58 => Some(1),
+        59..=121 => Some(2),
+        122..=248 => Some(4),
+        249..=503 => Some(8),
+        504..=1014 => Some(16),
+        _ => None,
     }
-
-    let npot = module_count.next_power_of_two();
-    assert!(npot <= MAX_MODULE_COUNT.next_power_of_two());
-
-    let block_count = {
-        let mut count = 1;
-        let mut n = 64;
-
-        loop {
-            let new_count = count * 2;
-            let new_n = n * 2;
-
-            if new_n < npot {
-                count = new_count;
-                n = new_n;
-            } else {
-                break;
-            }
-        }
-
-        count
-    };
-
-    Some(block_count)
 }
 
 mod worldinner {
@@ -1214,5 +1195,26 @@ mod tests {
     #[should_panic]
     fn test_position_to_index_unit_oob() {
         position_to_index([1, 1, 1], [0, 0, 1]);
+    }
+
+    #[test]
+    fn test_find_block_count_for_module_count() {
+        assert_eq!(find_block_count_for_module_count(0), None);
+        assert_eq!(find_block_count_for_module_count(1), Some(1));
+        assert_eq!(find_block_count_for_module_count(58), Some(1));
+
+        assert_eq!(find_block_count_for_module_count(59), Some(2));
+        assert_eq!(find_block_count_for_module_count(121), Some(2));
+
+        assert_eq!(find_block_count_for_module_count(122), Some(4));
+        assert_eq!(find_block_count_for_module_count(248), Some(4));
+
+        assert_eq!(find_block_count_for_module_count(249), Some(8));
+        assert_eq!(find_block_count_for_module_count(503), Some(8));
+
+        assert_eq!(find_block_count_for_module_count(504), Some(16));
+        assert_eq!(find_block_count_for_module_count(1014), Some(16));
+
+        assert_eq!(find_block_count_for_module_count(1015), None);
     }
 }
