@@ -22,8 +22,8 @@ pub struct WfcWorldStateHandle(*mut World);
 pub struct WfcRngStateHandle(*mut Rng);
 
 /// Returns the maximum module count supported to be sent with
-/// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
-/// implementation.
+/// [`wfc_world_state_slot_module_get`] and [`wfc_world_state_slot_module_set`]
+/// by the implementation.
 #[no_mangle]
 pub extern "C" fn wfc_query_max_module_count() -> u32 {
     u32::from(MAX_MODULE_COUNT)
@@ -71,7 +71,7 @@ impl From<WorldNewError> for WfcWorldStateInitResult {
 /// use these features without enabling them here can result in unexpected behavior.
 ///
 /// To change the world state to a different configuration, use
-/// [`wfc_world_state_slots_set`].
+/// [`wfc_world_state_slot_module_set`].
 ///
 /// Initially the world is configured to have uniform weights for each module
 /// across all slots, but this can be customized with
@@ -167,8 +167,20 @@ pub unsafe extern "C" fn wfc_world_state_init_from(
     *wfc_world_state_handle_ptr = wfc_world_state_handle;
 }
 
-// XXX: Add notion of compatibility to clone_from
-/// Copies data between two instances of Wave Function Collapse world state.
+#[repr(u32)]
+pub enum WfcWorldStateCloneFromResult {
+    Ok = 0,
+    ErrIncompatible = 1,
+}
+
+/// Copies data between two instances of Wave Function Collapse world state, if
+/// compatible.
+///
+/// Compatibility is determined by comparing the internal block size of the slot
+/// storage, i.e. whether both world states have the capability store the same
+/// amount modules in a slot. Worlds created from same parameters are always
+/// compatible, as are worlds created from other worlds as blueprints via
+/// [`wfc_world_state_init_from`].
 ///
 /// # Safety
 ///
@@ -182,7 +194,7 @@ pub unsafe extern "C" fn wfc_world_state_init_from(
 pub unsafe extern "C" fn wfc_world_state_clone_from(
     destination_wfc_world_state_handle: WfcWorldStateHandle,
     source_wfc_world_state_handle: WfcWorldStateHandle,
-) {
+) -> WfcWorldStateCloneFromResult {
     let destination_world = {
         assert!(!destination_wfc_world_state_handle.0.is_null());
         &mut *destination_wfc_world_state_handle.0
@@ -193,7 +205,13 @@ pub unsafe extern "C" fn wfc_world_state_clone_from(
         &*source_wfc_world_state_handle.0
     };
 
+    if !destination_world.clone_compatible(source_world) {
+        return WfcWorldStateCloneFromResult::ErrIncompatible;
+    }
+
     destination_world.clone_from(source_world);
+
+    WfcWorldStateCloneFromResult::Ok
 }
 
 /// Frees an instance of Wave Function Collapse world state.
@@ -215,6 +233,12 @@ pub extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldStateHand
     unsafe { Box::from_raw(wfc_world_state_handle.0) };
 }
 
+#[repr(u32)]
+pub enum WfcWorldStateSlotModuleSetResult {
+    Ok = 0,
+    ErrOutOfBounds = 1,
+}
+
 /// XXX: Docs
 pub unsafe extern "C" fn wfc_world_state_slot_module_set(
     wfc_world_state_handle: WfcWorldStateHandle,
@@ -223,15 +247,26 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_set(
     pos_z: u16,
     module: u16,
     value: u32,
-) {
+) -> WfcWorldStateSlotModuleSetResult {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &mut *wfc_world_state_handle.0
     };
 
-    // XXX: Bounds check.
+    let [dim_x, dim_y, dim_z] = world.dims();
+    if pos_x >= dim_x || pos_y >= dim_y || pos_z >= dim_z {
+        return WfcWorldStateSlotModuleSetResult::ErrOutOfBounds;
+    }
 
     world.set_slot_module([pos_x, pos_y, pos_z], module, value > 0);
+
+    WfcWorldStateSlotModuleSetResult::Ok
+}
+
+#[repr(u32)]
+pub enum WfcWorldStateSlotModuleGetResult {
+    Ok = 0,
+    ErrOutOfBounds = 1,
 }
 
 /// XXX: Docs
@@ -242,22 +277,37 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_get(
     pos_y: u16,
     pos_z: u16,
     module: u16,
-) -> u32 {
+    value: *mut u32,
+) -> WfcWorldStateSlotModuleGetResult {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &*wfc_world_state_handle.0
     };
 
-    // XXX: Bounds check. Result with out var, or default value?
+    let out_value = {
+        assert!(!value.is_null());
+        &mut *value
+    };
 
-    let value = world.slot_module([pos_x, pos_y, pos_z], module);
-    u32::from(value)
+    let [dim_x, dim_y, dim_z] = world.dims();
+    if pos_x >= dim_x || pos_y >= dim_y || pos_z >= dim_z {
+        return WfcWorldStateSlotModuleGetResult::ErrOutOfBounds;
+    }
+
+    if world.slot_module([pos_x, pos_y, pos_z], module) {
+        *out_value = 1;
+    } else {
+        *out_value = 0;
+    }
+
+    WfcWorldStateSlotModuleGetResult::Ok
 }
 
 #[repr(u32)]
 pub enum WfcWorldStateSlotModuleWeightsSetResult {
     Ok = 0,
-    ErrNotNormalPositive = 1,
+    ErrOutOfBounds = 1,
+    ErrNotNormalPositive = 2,
 }
 
 /// XXX: Docs
@@ -281,6 +331,11 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_weights_set(
         assert!(module_weights_len * mem::size_of::<f32>() < isize::MAX as usize);
         slice::from_raw_parts(module_weights_ptr, module_weights_len)
     };
+
+    let [dim_x, dim_y, dim_z] = world.dims();
+    if pos_x >= dim_x || pos_y >= dim_y || pos_z >= dim_z {
+        return WfcWorldStateSlotModuleWeightsSetResult::ErrOutOfBounds;
+    }
 
     for weight in module_weights {
         if !weight.is_normal() || !weight.is_sign_positive() {
