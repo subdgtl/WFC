@@ -4,44 +4,52 @@
 #include <ostream>
 #include <new>
 
-enum class AdjacencyRuleKind : uint32_t {
-  X = 0,
-  Y = 1,
-  Z = 2,
+enum class WfcCanonicalizeResult : uint32_t {
+  OkDeterministic = 0,
+  OkNondeterministic = 1,
+  OkContradiction = 2,
 };
 
 enum class WfcObserveResult : uint32_t {
-  Deterministic = 0,
-  Contradiction = 1,
-  Nondeterministic = 2,
+  OkDeterministic = 0,
+  OkNondeterministic = 1,
+  OkContradiction = 2,
+  ErrNotCanonical = 3,
+};
+
+enum class WfcWorldStateCloneFromResult : uint32_t {
+  Ok = 0,
+  ErrIncompatible = 1,
 };
 
 enum class WfcWorldStateInitResult : uint32_t {
   Ok = 0,
-  ErrTooManyModules = 1,
+  ErrModuleCountTooHigh = 1,
   ErrWorldDimensionsZero = 2,
+  ErrRulesEmpty = 3,
+  ErrRulesHaveGaps = 4,
+};
+
+enum class WfcWorldStateSlotModuleGetResult : uint32_t {
+  Ok = 0,
+  ErrOutOfBounds = 1,
+};
+
+enum class WfcWorldStateSlotModuleSetResult : uint32_t {
+  Ok = 0,
+  ErrOutOfBounds = 1,
 };
 
 enum class WfcWorldStateSlotModuleWeightsSetResult : uint32_t {
   Ok = 0,
-  ErrNotNormalPositive = 1,
-};
-
-enum class WfcWorldStateSlotsSetResult : uint32_t {
-  Ok = 0,
-  OkWorldNotCanonical = 1,
-  ErrWorldContradictory = 2,
+  ErrOutOfBounds = 1,
+  ErrWeightsLengthMismatch = 2,
+  ErrWeightsNotNormalPositive = 3,
 };
 
 /// An opaque handle to the Wave Function Collapse world state. Actually a
 /// pointer, but shhh!
 using WfcWorldStateHandle = World*;
-
-struct AdjacencyRule {
-  AdjacencyRuleKind kind;
-  uint8_t module_low;
-  uint8_t module_high;
-};
 
 /// An opaque handle to the PRNG state used by the Wave Function Collapse
 /// implementation. Actually a pointer, but shhh!
@@ -50,8 +58,8 @@ using WfcRngStateHandle = Rng*;
 extern "C" {
 
 /// Returns the maximum module count supported to be sent with
-/// [`wfc_world_state_slots_get`] and [`wfc_world_state_slots_set`] by the
-/// implementation.
+/// [`wfc_world_state_slot_module_get`] and [`wfc_world_state_slot_module_set`]
+/// by the implementation.
 uint32_t wfc_query_max_module_count();
 
 /// Slot entropy calculation utilizes weights. Will allocate memory for weights
@@ -70,7 +78,7 @@ uint32_t wfc_feature_weighted_observation();
 /// use these features without enabling them here can result in unexpected behavior.
 ///
 /// To change the world state to a different configuration, use
-/// [`wfc_world_state_slots_set`].
+/// [`wfc_world_state_slot_module_set`].
 ///
 /// Initially the world is configured to have uniform weights for each module
 /// across all slots, but this can be customized with
@@ -103,16 +111,23 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
 /// Behavior is undefined if any of the following conditions are violated:
 ///
 /// - `wfc_world_state_handle_ptr` will be written to. It must be non-null and
-///   aligned.
+///   aligned,
 ///
 /// - `source_wfc_world_state_handle` must be a valid handle created via
 ///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
 ///   [`wfc_world_state_init_from`] and not yet freed via
-///   [`wfc_world_state_free`],
+///   [`wfc_world_state_free`].
 void wfc_world_state_init_from(WfcWorldStateHandle *wfc_world_state_handle_ptr,
                                WfcWorldStateHandle source_wfc_world_state_handle);
 
-/// Copies data between two instances of Wave Function Collapse world state.
+/// Copies data between two instances of Wave Function Collapse world state, if
+/// compatible.
+///
+/// Compatibility is determined by comparing the internal block size of the slot
+/// storage, i.e. whether both world states have the capability store the same
+/// amount modules in a slot. Worlds created from same parameters are always
+/// compatible, as are worlds created from other worlds as blueprints via
+/// [`wfc_world_state_init_from`].
 ///
 /// # Safety
 ///
@@ -122,8 +137,8 @@ void wfc_world_state_init_from(WfcWorldStateHandle *wfc_world_state_handle_ptr,
 ///   must be valid handles created via [`wfc_world_state_init`] that returned
 ///   [`WfcWorldStateInitResult::Ok`] or [`wfc_world_state_init_from`] and not
 ///   yet freed via [`wfc_world_state_free`].
-void wfc_world_state_clone_from(WfcWorldStateHandle destination_wfc_world_state_handle,
-                                WfcWorldStateHandle source_wfc_world_state_handle);
+WfcWorldStateCloneFromResult wfc_world_state_clone_from(WfcWorldStateHandle destination_wfc_world_state_handle,
+                                                        WfcWorldStateHandle source_wfc_world_state_handle);
 
 /// Frees an instance of Wave Function Collapse world state.
 ///
@@ -134,45 +149,19 @@ void wfc_world_state_clone_from(WfcWorldStateHandle destination_wfc_world_state_
 /// - `wfc_world_state_handle` must be a valid handle created via
 ///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
 ///   [`wfc_world_state_init_from`] and not yet freed via
-///   [`wfc_world_state_free`],
+///   [`wfc_world_state_free`].
 void wfc_world_state_free(WfcWorldStateHandle wfc_world_state_handle);
 
-/// Writes Wave Function Collapse slots from `slots_ptr` and `slots_len` into
-/// the provided handle.
+/// Stores one Wave Function Collapse module into a slot of the provided handle.
 ///
-/// Slots are stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
-/// modules with ids 0 and 2.
+/// Nonzero values count as `true`.
 ///
-/// Currently does not validate against setting bits higher than the module
-/// count, but it is a usage error to do so.
-///
-/// The bit vectors of state are stored in a three dimensional array (compacted
-/// in a one dimensional array). To get to a slot state on position `[x, y, z]`,
-/// first slice by Z, then Y, then X. E.g. for dimensions 2*2*2, the slots would
-/// be in the following order:
-///
-/// ```text
-/// [0, 0, 0]
-/// [1, 0, 0]
-/// [0, 1, 0]
-/// [1, 1, 0]
-/// [0, 0, 1]
-/// [1, 0, 1]
-/// [0, 1, 1]
-/// [1, 1, 1]
-/// ```
-///
-/// If this function returns
-/// [`WfcWorldStateSlotsSetResult::ErrWorldContradictory`], the provided handle
-/// becomes invalid. It will become valid once again when passed to this
-/// function and [`WfcWorldStateSlotsSetResult::Ok`] or
-/// [`WfcWorldStateSlotsSetResult::OkWorldNotCanonical`] is returned.
-///
-/// If the modules in the provided slots could still be collapsed according to
-/// the current rule set, the world is not canonical. This function fixes that
-/// and returns [`WfcWorldStateSlotsSetResult::OkWorldNotCanonical`] as a
-/// warning.
+/// Setting a slot changes the world from canonical to modified state, meaning
+/// the library does not know for certain if all WFC constraints are upheld. It
+/// is an error to observe a modified world. In order to observe this world
+/// state handle again, call [`wfc_world_canonicalize`], which will transition
+/// the world back to canonical state (and potentially remove some modules from
+/// slots as a result).
 ///
 /// # Safety
 ///
@@ -181,35 +170,18 @@ void wfc_world_state_free(WfcWorldStateHandle wfc_world_state_handle);
 /// - `wfc_world_state_handle` must be a valid handle created via
 ///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
 ///   [`wfc_world_state_init_from`] and not yet freed via
-///   [`wfc_world_state_free`],
-///
-/// - `slots_ptr` and `slots_len` are used to construct a slice. See
-///   [`std::slice::from_raw_parts`].
-WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_world_state_handle,
-                                                      const uint64_t (*slots_ptr)[4],
-                                                      uintptr_t slots_len);
+///   [`wfc_world_state_free`].
+WfcWorldStateSlotModuleSetResult wfc_world_state_slot_module_set(WfcWorldStateHandle wfc_world_state_handle,
+                                                                 uint16_t pos_x,
+                                                                 uint16_t pos_y,
+                                                                 uint16_t pos_z,
+                                                                 uint16_t module,
+                                                                 uint32_t value);
 
-/// Reads slots from the provided handle into `slots_ptr` and `slots_len`.
+/// Loads one Wave Function Collapse module from a slot of the provided handle
+/// into `value`.
 ///
-/// State is stored in sparse bit vectors where each bit encodes a module
-/// present at that slot, e.g. a slot with 0th and 2nd bits set will contain
-/// modules with ids 0 and 2.
-///
-/// The bit vectors of state are stored in a three dimensional array (compacted
-/// in a one dimensional array). To get to a slot state on position `[x, y, z]`,
-/// first slice by Z, then Y, then X. E.g. for dimensions 2*2*2, the slots would
-/// be in the following order:
-///
-/// ```text
-/// [0, 0, 0]
-/// [1, 0, 0]
-/// [0, 1, 0]
-/// [1, 1, 0]
-/// [0, 0, 1]
-/// [1, 0, 1]
-/// [0, 1, 1]
-/// [1, 1, 1]
-/// ```
+/// If the module is present, the value will be 1, otherwise 0.
 ///
 /// # Safety
 ///
@@ -220,26 +192,15 @@ WfcWorldStateSlotsSetResult wfc_world_state_slots_set(WfcWorldStateHandle wfc_wo
 ///   [`wfc_world_state_init_from`] and not yet freed via
 ///   [`wfc_world_state_free`],
 ///
-/// - `slots_ptr` and `slots_len` are used to construct a mutable slice. See
-///   [`std::slice::from_raw_parts_mut`].
-void wfc_world_state_slots_get(WfcWorldStateHandle wfc_world_state_handle,
-                               uint64_t (*slots_ptr)[4],
-                               uintptr_t slots_len);
+/// - `value` must be a non-null, aligned pointer to a [`u32`].
+WfcWorldStateSlotModuleGetResult wfc_world_state_slot_module_get(WfcWorldStateHandle wfc_world_state_handle,
+                                                                 uint16_t pos_x,
+                                                                 uint16_t pos_y,
+                                                                 uint16_t pos_z,
+                                                                 uint16_t module,
+                                                                 uint32_t *value);
 
-/// Writes Wave Function Collapse module weights for each slot from
-/// `slot_module_weights_ptr` and `slot_module_weights_len` into the provided
-/// handle.
-///
-/// The written weights will influence slot either entropy computation or module
-/// selection for the slot they were written, depending on the enabled features.
-///
-/// The weights are stored in a four dimensional array (compacted in a one
-/// dimensional array). To get a slice of weights on position `[x, y, z]`, first
-/// slice by Z, then Y, then X. The lenght of the weight slice must be equal to
-/// the world's module count.
-///
-/// The weights must be positive, normal (non-zero, not infinite, not NaN)
-/// floating point numbers.
+/// Stores weights for one Wave Function Collapse slot into the provided handle.
 ///
 /// # Safety
 ///
@@ -250,11 +211,14 @@ void wfc_world_state_slots_get(WfcWorldStateHandle wfc_world_state_handle,
 ///   [`wfc_world_state_init_from`] and not yet freed via
 ///   [`wfc_world_state_free`],
 ///
-/// - `slot_module_weights_ptr` and `slot_module_weights_len` are used to
-///   construct a slice. See [`std::slice::from_raw_parts`].
+/// - `module_weights_ptr` and `module_weights_len` are used to construct a
+///   slice. See [`std::slice::from_raw_parts`].
 WfcWorldStateSlotModuleWeightsSetResult wfc_world_state_slot_module_weights_set(WfcWorldStateHandle wfc_world_state_handle,
-                                                                                const float *slot_module_weights_ptr,
-                                                                                uintptr_t slot_module_weights_len);
+                                                                                uint16_t pos_x,
+                                                                                uint16_t pos_y,
+                                                                                uint16_t pos_z,
+                                                                                const float *module_weights_ptr,
+                                                                                uintptr_t module_weights_len);
 
 /// Creates an instance of pseudo-random number generator and initializes it
 /// with the provided seed.
@@ -283,6 +247,27 @@ void wfc_rng_state_init(WfcRngStateHandle *wfc_rng_state_handle_ptr,
 ///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
 void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
 
+/// Canonicalizes a Wave Function Collapse world.
+///
+/// While the initially created world starts in a canonical state, setting slots
+/// with [`wfc_world_state_slot_module_set`] can invalidate that. Checking this
+/// is expensive, and therefore the library just pessimistically transitions the
+/// world to a modified state.
+///
+/// Once all the desired state modifications are applied, use
+/// [`wfc_world_canonicalize`] for this handle to be once again usable with
+/// [`wfc_observe`].
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`].
+WfcCanonicalizeResult wfc_world_canonicalize(WfcWorldStateHandle wfc_world_state_handle);
+
 /// Runs observations on the world until a deterministic or contradictory result
 /// is found.
 ///
@@ -305,7 +290,9 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
 ///   [`wfc_world_state_free`],
 ///
 /// - `wfc_rng_state_handle` must be a valid handle created via
-///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
+///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`],
+///
+/// - `spent_observations` must be a non-null, aligned pointer to a [`u32`].
 WfcObserveResult wfc_observe(WfcWorldStateHandle wfc_world_state_handle,
                              WfcRngStateHandle wfc_rng_state_handle,
                              uint32_t max_observations,

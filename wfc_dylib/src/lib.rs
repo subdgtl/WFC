@@ -142,12 +142,12 @@ pub unsafe extern "C" fn wfc_world_state_init(
 /// Behavior is undefined if any of the following conditions are violated:
 ///
 /// - `wfc_world_state_handle_ptr` will be written to. It must be non-null and
-///   aligned.
+///   aligned,
 ///
 /// - `source_wfc_world_state_handle` must be a valid handle created via
 ///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
 ///   [`wfc_world_state_init_from`] and not yet freed via
-///   [`wfc_world_state_free`],
+///   [`wfc_world_state_free`].
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_init_from(
     wfc_world_state_handle_ptr: *mut WfcWorldStateHandle,
@@ -223,7 +223,7 @@ pub unsafe extern "C" fn wfc_world_state_clone_from(
 /// - `wfc_world_state_handle` must be a valid handle created via
 ///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
 ///   [`wfc_world_state_init_from`] and not yet freed via
-///   [`wfc_world_state_free`],
+///   [`wfc_world_state_free`].
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldStateHandle) {
     if wfc_world_state_handle.0.is_null() {
@@ -239,7 +239,26 @@ pub enum WfcWorldStateSlotModuleSetResult {
     ErrOutOfBounds = 1,
 }
 
-/// XXX: Docs
+/// Stores one Wave Function Collapse module into a slot of the provided handle.
+///
+/// Nonzero values count as `true`.
+///
+/// Setting a slot changes the world from canonical to modified state, meaning
+/// the library does not know for certain if all WFC constraints are upheld. It
+/// is an error to observe a modified world. In order to observe this world
+/// state handle again, call [`wfc_world_canonicalize`], which will transition
+/// the world back to canonical state (and potentially remove some modules from
+/// slots as a result).
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`].
+#[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_slot_module_set(
     wfc_world_state_handle: WfcWorldStateHandle,
     pos_x: u16,
@@ -269,7 +288,21 @@ pub enum WfcWorldStateSlotModuleGetResult {
     ErrOutOfBounds = 1,
 }
 
-/// XXX: Docs
+/// Loads one Wave Function Collapse module from a slot of the provided handle
+/// into `value`.
+///
+/// If the module is present, the value will be 1, otherwise 0.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
+///
+/// - `value` must be a non-null, aligned pointer to a [`u32`].
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_slot_module_get(
     wfc_world_state_handle: WfcWorldStateHandle,
@@ -307,10 +340,23 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_get(
 pub enum WfcWorldStateSlotModuleWeightsSetResult {
     Ok = 0,
     ErrOutOfBounds = 1,
-    ErrNotNormalPositive = 2,
+    ErrWeightsLengthMismatch = 2,
+    ErrWeightsNotNormalPositive = 3,
 }
 
-/// XXX: Docs
+/// Stores weights for one Wave Function Collapse slot into the provided handle.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`],
+///
+/// - `module_weights_ptr` and `module_weights_len` are used to construct a
+///   slice. See [`std::slice::from_raw_parts`].
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_slot_module_weights_set(
     wfc_world_state_handle: WfcWorldStateHandle,
@@ -337,9 +383,13 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_weights_set(
         return WfcWorldStateSlotModuleWeightsSetResult::ErrOutOfBounds;
     }
 
+    if usize::from(world.module_count()) != module_weights.len() {
+        return WfcWorldStateSlotModuleWeightsSetResult::ErrWeightsLengthMismatch;
+    }
+
     for weight in module_weights {
         if !weight.is_normal() || !weight.is_sign_positive() {
-            return WfcWorldStateSlotModuleWeightsSetResult::ErrNotNormalPositive;
+            return WfcWorldStateSlotModuleWeightsSetResult::ErrWeightsNotNormalPositive;
         }
     }
 
@@ -404,7 +454,25 @@ pub enum WfcCanonicalizeResult {
     OkContradiction = 2,
 }
 
-/// XXX: Docs
+/// Canonicalizes a Wave Function Collapse world.
+///
+/// While the initially created world starts in a canonical state, setting slots
+/// with [`wfc_world_state_slot_module_set`] can invalidate that. Checking this
+/// is expensive, and therefore the library just pessimistically transitions the
+/// world to a modified state.
+///
+/// Once all the desired state modifications are applied, use
+/// [`wfc_world_canonicalize`] for this handle to be once again usable with
+/// [`wfc_observe`].
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`].
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_canonicalize(
     wfc_world_state_handle: WfcWorldStateHandle,
@@ -453,7 +521,9 @@ pub enum WfcObserveResult {
 ///   [`wfc_world_state_free`],
 ///
 /// - `wfc_rng_state_handle` must be a valid handle created via
-///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`].
+///   [`wfc_rng_state_init`] and not yet freed via [`wfc_rng_state_free`],
+///
+/// - `spent_observations` must be a non-null, aligned pointer to a [`u32`].
 #[no_mangle]
 pub unsafe extern "C" fn wfc_observe(
     wfc_world_state_handle: WfcWorldStateHandle,
