@@ -340,11 +340,13 @@ pub fn export_world_state<W: io::Write>(
     for z in (0..dims[2]).rev() {
         for y in (0..dims[1]).rev() {
             for x in 0..dims[0] {
-                let count = world.slot_module_count([x, y, z]);
                 let mut modules_in_slot: TinyVec<[u16; 8]> = TinyVec::new();
-                // XXX: Do this without iterator
-
-                //                     world.slot_modules_iter([x, y, z]).collect();
+                for i in 0..world.module_count() {
+                    let module = cast_u16(i);
+                    if world.slot_module([x, y, z], module) {
+                        modules_in_slot.push(module);
+                    }
+                }
 
                 let slot_width = if x == dims[0] - 1 {
                     0
