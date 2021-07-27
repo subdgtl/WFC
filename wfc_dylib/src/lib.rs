@@ -75,7 +75,7 @@ impl From<WorldNewError> for WfcWorldStateInitResult {
 ///
 /// Initially the world is configured to have uniform weights for each module
 /// across all slots, but this can be customized with
-/// [`wfc_world_state_slot_module_weights_set`]. These weights can be utilized
+/// [`wfc_world_state_slot_module_weight_set`]. These weights can be utilized
 /// either for slot entropy computation ([`Features::WEIGHTED_ENTROPY`]), or
 /// weighted slot observation ([`Features::WEIGHTED_OBSERVATION`]).
 ///
@@ -236,7 +236,8 @@ pub unsafe extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldSt
 #[repr(u32)]
 pub enum WfcWorldStateSlotModuleSetResult {
     Ok = 0,
-    ErrOutOfBounds = 1,
+    ErrSlotOutOfBounds = 1,
+    ErrModuleOutOfBounds = 2,
 }
 
 /// Stores one Wave Function Collapse module into a slot of the provided handle.
@@ -274,7 +275,11 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_set(
 
     let [dim_x, dim_y, dim_z] = world.dims();
     if pos_x >= dim_x || pos_y >= dim_y || pos_z >= dim_z {
-        return WfcWorldStateSlotModuleSetResult::ErrOutOfBounds;
+        return WfcWorldStateSlotModuleSetResult::ErrSlotOutOfBounds;
+    }
+
+    if module >= world.module_count() {
+        return WfcWorldStateSlotModuleSetResult::ErrModuleOutOfBounds;
     }
 
     world.set_slot_module([pos_x, pos_y, pos_z], module, value > 0);
@@ -285,7 +290,8 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_set(
 #[repr(u32)]
 pub enum WfcWorldStateSlotModuleGetResult {
     Ok = 0,
-    ErrOutOfBounds = 1,
+    ErrSlotOutOfBounds = 1,
+    ErrModuleOutOfBounds = 2,
 }
 
 /// Loads one Wave Function Collapse module from a slot of the provided handle
@@ -324,7 +330,11 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_get(
 
     let [dim_x, dim_y, dim_z] = world.dims();
     if pos_x >= dim_x || pos_y >= dim_y || pos_z >= dim_z {
-        return WfcWorldStateSlotModuleGetResult::ErrOutOfBounds;
+        return WfcWorldStateSlotModuleGetResult::ErrSlotOutOfBounds;
+    }
+
+    if module >= world.module_count() {
+        return WfcWorldStateSlotModuleGetResult::ErrModuleOutOfBounds;
     }
 
     if world.slot_module([pos_x, pos_y, pos_z], module) {
@@ -337,14 +347,14 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_get(
 }
 
 #[repr(u32)]
-pub enum WfcWorldStateSlotModuleWeightsSetResult {
+pub enum WfcWorldStateSlotModuleWeightSetResult {
     Ok = 0,
-    ErrOutOfBounds = 1,
-    ErrWeightsLengthMismatch = 2,
-    ErrWeightsNotNormalPositive = 3,
+    ErrSlotOutOfBounds = 1,
+    ErrModuleOutOfBounds = 2,
+    ErrWeightNotNormalPositive = 3,
 }
 
-/// Stores weights for one Wave Function Collapse slot into the provided handle.
+/// Stores a weight for one Wave Function Collapse slot into the provided handle.
 ///
 /// # Safety
 ///
@@ -353,49 +363,37 @@ pub enum WfcWorldStateSlotModuleWeightsSetResult {
 /// - `wfc_world_state_handle` must be a valid handle created via
 ///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
 ///   [`wfc_world_state_init_from`] and not yet freed via
-///   [`wfc_world_state_free`],
-///
-/// - `module_weights_ptr` and `module_weights_len` are used to construct a
-///   slice. See [`std::slice::from_raw_parts`].
+///   [`wfc_world_state_free`].
 #[no_mangle]
-pub unsafe extern "C" fn wfc_world_state_slot_module_weights_set(
+pub unsafe extern "C" fn wfc_world_state_slot_module_weight_set(
     wfc_world_state_handle: WfcWorldStateHandle,
     pos_x: u16,
     pos_y: u16,
     pos_z: u16,
-    module_weights_ptr: *const f32,
-    module_weights_len: usize,
-) -> WfcWorldStateSlotModuleWeightsSetResult {
+    module: u16,
+    weight: f32,
+) -> WfcWorldStateSlotModuleWeightSetResult {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &mut *wfc_world_state_handle.0
     };
 
-    let module_weights = {
-        assert!(!module_weights_ptr.is_null());
-        assert_ne!(module_weights_len, 0);
-        assert!(module_weights_len * mem::size_of::<f32>() < isize::MAX as usize);
-        slice::from_raw_parts(module_weights_ptr, module_weights_len)
-    };
-
     let [dim_x, dim_y, dim_z] = world.dims();
     if pos_x >= dim_x || pos_y >= dim_y || pos_z >= dim_z {
-        return WfcWorldStateSlotModuleWeightsSetResult::ErrOutOfBounds;
+        return WfcWorldStateSlotModuleWeightSetResult::ErrSlotOutOfBounds;
     }
 
-    if usize::from(world.module_count()) != module_weights.len() {
-        return WfcWorldStateSlotModuleWeightsSetResult::ErrWeightsLengthMismatch;
+    if module >= world.module_count() {
+        return WfcWorldStateSlotModuleWeightSetResult::ErrModuleOutOfBounds;
     }
 
-    for weight in module_weights {
-        if !weight.is_normal() || !weight.is_sign_positive() {
-            return WfcWorldStateSlotModuleWeightsSetResult::ErrWeightsNotNormalPositive;
-        }
+    if !weight.is_normal() || !weight.is_sign_positive() {
+        return WfcWorldStateSlotModuleWeightSetResult::ErrWeightNotNormalPositive;
     }
 
-    world.set_slot_module_weights([pos_x, pos_y, pos_z], module_weights);
+    world.set_slot_module_weight([pos_x, pos_y, pos_z], module, weight);
 
-    WfcWorldStateSlotModuleWeightsSetResult::Ok
+    WfcWorldStateSlotModuleWeightSetResult::Ok
 }
 
 /// Creates an instance of pseudo-random number generator and initializes it

@@ -324,6 +324,20 @@ impl World {
         self.inner.set_slot_modules(pos, value);
     }
 
+    /// Sets a weight for a module.
+    ///
+    /// Computations running on the weights require them to be normal, positive
+    /// floats (not zero, not infinite, not NaN, not subnormal and sign
+    /// positive).
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the weights is not a normal ([`f32::is_normal`]),
+    /// positive ([`f32::is_sign_positive`]) number.
+    pub fn set_slot_module_weight(&mut self, pos: [u16; 3], module: u16, weight: f32) {
+        self.inner.set_slot_module_weight(pos, module, weight);
+    }
+
     /// Sets weights for a module.
     ///
     /// Computations running on the weights require them to be normal, positive
@@ -527,6 +541,16 @@ mod worldinner {
             }
         }
 
+        pub fn set_slot_module_weight(&mut self, pos: [u16; 3], module: u16, weight: f32) {
+            match self {
+                Self::Size1(world) => world.set_slot_module_weight(pos, module, weight),
+                Self::Size2(world) => world.set_slot_module_weight(pos, module, weight),
+                Self::Size4(world) => world.set_slot_module_weight(pos, module, weight),
+                Self::Size8(world) => world.set_slot_module_weight(pos, module, weight),
+                Self::Size16(world) => world.set_slot_module_weight(pos, module, weight),
+            }
+        }
+
         pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
             match self {
                 Self::Size1(world) => world.set_slot_module_weights(pos, weights),
@@ -714,6 +738,18 @@ mod worldinnerconst {
             }
 
             self.slots_modified = true;
+        }
+
+        pub fn set_slot_module_weight(&mut self, pos: [u16; 3], module: u16, weight: f32) {
+            assert!(module < self.module_count);
+            assert!(weight.is_normal() && weight.is_sign_positive());
+
+            if let Some(slot_module_weights) = &mut self.slot_module_weights {
+                let index = usize::from(module)
+                    + usize::from(self.module_count) * position_to_index(self.dims, pos);
+
+                slot_module_weights[index] = weight;
+            }
         }
 
         pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
