@@ -7,10 +7,8 @@ using System.Text;
 using Grasshopper.Kernel;
 using Rhino.Geometry;
 
-namespace wfc_gh
-{
-    public class GH_WaveFunctionCollapse3D : GH_Component
-    {
+namespace wfc_gh {
+    public class GH_WaveFunctionCollapse3D : GH_Component {
 
         private const int IN_PARAM_RULE_AXIS = 0;
         private const int IN_PARAM_RULE_LOW = 1;
@@ -25,16 +23,14 @@ namespace wfc_gh
         private const int OUT_PARAM_WORLD_SLOT_POSITION = 1;
         private const int OUT_PARAM_WORLD_SLOT_MODULE = 2;
 
-        private System.Drawing.Bitmap componentIcon;
+        private readonly System.Drawing.Bitmap componentIcon;
 
         public GH_WaveFunctionCollapse3D() : base("Wave Function Collapse 3D",
                                                   "WFC3",
                                                   "Solver for the Wave Function Collapse algorithm in cubic voxel space",
                                                   "WaveFunctionCollapse",
-                                                  "WaveFunctionCollapse")
-        {
-            using (var ms = new MemoryStream(Resources.ComponentIcon))
-            {
+                                                  "WaveFunctionCollapse") {
+            using (var ms = new MemoryStream(Resources.ComponentIcon)) {
                 componentIcon = new System.Drawing.Bitmap(ms);
             }
         }
@@ -43,8 +39,7 @@ namespace wfc_gh
 
         protected override System.Drawing.Bitmap Icon => componentIcon;
 
-        protected override void RegisterInputParams(GH_InputParamManager pManager)
-        {
+        protected override void RegisterInputParams(GH_InputParamManager pManager) {
             pManager.AddTextParameter("Rule axis",
                                       "RA",
                                       "A list of string axes (\"X\", \"Y\" or \"Z\") definitions along which to apply the rule. Zipped with RL and RH.",
@@ -76,7 +71,7 @@ namespace wfc_gh
 
             pManager.AddIntegerParameter("Random seed",
                                          "S",
-                                         "Random number genenerator seed",
+                                         "Random number generator seed",
                                          GH_ParamAccess.item,
                                          42);
             pManager.AddIntegerParameter("Max attempts",
@@ -86,8 +81,7 @@ namespace wfc_gh
                                          100);
         }
 
-        protected override void RegisterOutputParams(GH_OutputParamManager pManager)
-        {
+        protected override void RegisterOutputParams(GH_OutputParamManager pManager) {
             pManager.AddTextParameter("out", "out", "Debug output and metrics", GH_ParamAccess.item);
             pManager.AddVectorParameter("Slot positions",
                                         "SP",
@@ -99,8 +93,7 @@ namespace wfc_gh
                                       GH_ParamAccess.list);
         }
 
-        protected override void SolveInstance(IGH_DataAccess DA)
-        {
+        protected override void SolveInstance(IGH_DataAccess DA) {
             Stats stats = new Stats();
 
             //
@@ -109,7 +102,7 @@ namespace wfc_gh
             // The rules come in three lists of the same length. The first contains texts
             // representing the axis/kind (x/y/z).
             // Second and third list contain unique textual identifiers of the modules.
-            // This importer replaces those string names with generated u32 numbers,
+            // This importer replaces those string names with generated u16 numbers,
             // starting with 0.
 
             var adjacencyRulesAxis = new List<string>();
@@ -123,8 +116,7 @@ namespace wfc_gh
                                                            adjacencyRulesModuleLow.Count),
                                                   adjacencyRulesModuleHigh.Count);
 
-            if (adjacencyRulesMinCount == 0)
-            {
+            if (adjacencyRulesMinCount == 0) {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                   "Must supply at least one adjacency rule");
                 return;
@@ -136,34 +128,30 @@ namespace wfc_gh
             {
                 HashSet<string> allModules = new HashSet<string>();
 
-                for (var i = 0; i < adjacencyRulesMinCount; ++i)
-                {
+                for (var i = 0; i < adjacencyRulesMinCount; ++i) {
                     allModules.Add(adjacencyRulesModuleLow[i]);
                     allModules.Add(adjacencyRulesModuleHigh[i]);
                 }
 
-                if (allModules.Count > maxModuleCount)
-                {
+                if (allModules.Count > maxModuleCount) {
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                       "Too many modules. Maximum allowed is " + maxModuleCount);
                     return;
                 }
             }
 
-            byte nextModule = 0;
-            var nameToModule = new Dictionary<string, byte>();
-            var moduleToName = new Dictionary<byte, string>();
+            ushort nextModule = 0;
+            var nameToModule = new Dictionary<string, ushort>();
+            var moduleToName = new Dictionary<ushort, string>();
             var adjacencyRules = new AdjacencyRule[adjacencyRulesMinCount];
 
-            for (var i = 0; i < adjacencyRulesMinCount; ++i)
-            {
+            for (var i = 0; i < adjacencyRulesMinCount; ++i) {
                 string axisStr = adjacencyRulesAxis[i];
                 string lowStr = adjacencyRulesModuleLow[i];
                 string highStr = adjacencyRulesModuleHigh[i];
 
                 AdjacencyRuleKind kind;
-                switch (axisStr)
-                {
+                switch (axisStr) {
                     case "x":
                     case "X":
                         kind = AdjacencyRuleKind.X;
@@ -181,13 +169,10 @@ namespace wfc_gh
                         return;
                 }
 
-                byte low = 0;
-                if (nameToModule.ContainsKey(lowStr))
-                {
+                ushort low = 0;
+                if (nameToModule.ContainsKey(lowStr)) {
                     nameToModule.TryGetValue(lowStr, out low);
-                }
-                else
-                {
+                } else {
                     low = nextModule;
                     nameToModule.Add(lowStr, low);
                     moduleToName.Add(low, lowStr);
@@ -195,13 +180,10 @@ namespace wfc_gh
                     Debug.Assert(nextModule < maxModuleCount);
                 }
 
-                byte high = 0;
-                if (nameToModule.ContainsKey(highStr))
-                {
+                ushort high = 0;
+                if (nameToModule.ContainsKey(highStr)) {
                     nameToModule.TryGetValue(highStr, out high);
-                }
-                else
-                {
+                } else {
                     high = nextModule;
                     nameToModule.Add(highStr, high);
                     moduleToName.Add(high, highStr);
@@ -227,20 +209,17 @@ namespace wfc_gh
             int worldYInt = (int)Math.Round(worldSize.Y);
             int worldZInt = (int)Math.Round(worldSize.Z);
 
-            if (worldXInt <= 0)
-            {
+            if (worldXInt <= 0) {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                   "World X must be a positive integer");
                 return;
             }
-            if (worldYInt <= 0)
-            {
+            if (worldYInt <= 0) {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                   "World Y must be a positive integer");
                 return;
             }
-            if (worldZInt <= 0)
-            {
+            if (worldZInt <= 0) {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                   "World Z must be a positive integer");
                 return;
@@ -249,32 +228,10 @@ namespace wfc_gh
             ushort worldX = (ushort)worldXInt;
             ushort worldY = (ushort)worldYInt;
             ushort worldZ = (ushort)worldZInt;
-            uint worldDimensions = (uint)worldX * worldY * worldZ;
-            uint worldSlotsPerLayer = (uint)worldX * worldY;
-            uint worldSlotsPerRow = worldX;
 
             //
             // -- World slot positions and modules --
             //
-
-            // This array is re-used for both input and output (if input world
-            // state was provided). This is ok, because
-            // wfc_world_state_slots_get does clear it to zero before writing to
-            // it.
-            var slots = new SlotState[worldDimensions];
-
-            // ... WE do need to clear it to zero, however. C# does not
-            // initialize slot_state for us!
-            for (var i = 0; i < slots.Length; ++i)
-            {
-                unsafe
-                {
-                    slots[i].slot_state[0] = 0;
-                    slots[i].slot_state[1] = 0;
-                    slots[i].slot_state[2] = 0;
-                    slots[i].slot_state[3] = 0;
-                }
-            }
 
             // Note: These lists will be cleared and re-used for output.
             var worldSlotPositions = new List<Vector3d>();
@@ -284,59 +241,6 @@ namespace wfc_gh
             DA.GetDataList(IN_PARAM_WORLD_SLOT_MODULE, worldSlotModules);
 
             int worldSlotMinCount = Math.Min(worldSlotPositions.Count, worldSlotModules.Count);
-            for (var i = 0; i < worldSlotMinCount; ++i)
-            {
-                var position = worldSlotPositions[i];
-                string moduleStr = worldSlotModules[i];
-
-                int slotXInt = (int)Math.Round(position.X);
-                int slotYInt = (int)Math.Round(position.Y);
-                int slotZInt = (int)Math.Round(position.Z);
-
-                if (slotXInt < 0)
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                      "Slot X must be a nonnegative integer");
-                    return;
-                }
-                if (slotYInt < 0)
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                      "Slot Y must be a nonnegative integer");
-                    return;
-                }
-                if (slotZInt < 0)
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                      "World Z must be a nonnegative integer");
-                    return;
-                }
-
-                uint slotX = (uint)slotXInt;
-                uint slotY = (uint)slotYInt;
-                uint slotZ = (uint)slotZInt;
-
-                if (nameToModule.TryGetValue(moduleStr.ToString(), out byte module))
-                {
-                    uint slotIndex = slotX + slotY * worldSlotsPerRow + slotZ * worldSlotsPerLayer;
-                    Debug.Assert(slotIndex < slots.Length);
-
-                    byte blkIndex = (byte)(module / 64u);
-                    byte bitIndex = (byte)(module % 64u);
-
-                    Debug.Assert(blkIndex < 4);
-                    unsafe
-                    {
-                        slots[slotIndex].slot_state[blkIndex] |= 1ul << bitIndex;
-                    }
-                }
-                else
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                      "Slot module list (SM) contains module not found in the ruleset: " + moduleStr);
-                    return;
-                }
-            }
 
             //
             // -- Random seed --
@@ -355,8 +259,7 @@ namespace wfc_gh
             random.NextBytes(rngSeedLowArr);
             random.NextBytes(rngSeedHighArr);
 
-            if (!BitConverter.IsLittleEndian)
-            {
+            if (!BitConverter.IsLittleEndian) {
                 // If we are running on a BE machine, we need to reverse the bytes,
                 // because low and high are defined to always be LE.
                 Array.Reverse(rngSeedLowArr);
@@ -374,18 +277,14 @@ namespace wfc_gh
             DA.GetData(IN_PARAM_MAX_ATTEMPTS, ref maxAttempts);
 
             //
-            // -- Run the thing and **pray** --
+            // -- Initialize world state and feed slot data --
             //
 
-            var wfcRngStateHandle = IntPtr.Zero;
             var wfcWorldStateHandle = IntPtr.Zero;
             var wfcWorldStateHandleBackup = IntPtr.Zero;
-            unsafe
-            {
-                Native.wfc_rng_state_init(&wfcRngStateHandle, rngSeedLow, rngSeedHigh);
-
-                fixed (AdjacencyRule* adjacencyRulesPtr = &adjacencyRules[0])
-                {
+            var wfcRngStateHandle = IntPtr.Zero;
+            unsafe {
+                fixed (AdjacencyRule* adjacencyRulesPtr = &adjacencyRules[0]) {
                     var result = Native.wfc_world_state_init(&wfcWorldStateHandle,
                                                              adjacencyRulesPtr,
                                                              (UIntPtr)adjacencyRules.Length,
@@ -394,12 +293,11 @@ namespace wfc_gh
                                                              worldZ,
                                                              0);
 
-                    switch (result)
-                    {
+                    switch (result) {
                         case WfcWorldStateInitResult.Ok:
                             // All good
                             break;
-                        case WfcWorldStateInitResult.ErrTooManyModules:
+                        case WfcWorldStateInitResult.ErrModuleCountTooHigh:
                             AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                               "WFC solver failed: Adjacency rules contained too many modules");
                             return;
@@ -407,35 +305,98 @@ namespace wfc_gh
                             AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                               "WFC solver failed: World dimensions are zero");
                             return;
+                        case WfcWorldStateInitResult.ErrRulesEmpty:
+                            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                              "WFC solver failed: No rules provided");
+                            return;
+                        case WfcWorldStateInitResult.ErrRulesHaveGaps:
+                            Debug.Assert(false);
+                            return;
                         default:
                             Debug.Assert(false);
                             return;
                     }
                 }
 
-                fixed (SlotState* slotsPtr = &slots[0])
+                Native.wfc_rng_state_init(&wfcRngStateHandle, rngSeedLow, rngSeedHigh);
+            }
+
+            unsafe {
+                // Clear all modules to false first
+                for (ushort z = 0; z < worldZ; ++z) {
+                    for (ushort y = 0; y < worldY; ++y) {
+                        for (ushort x = 0; x < worldX; ++x) {
+                            for (ushort m = 0; m < nameToModule.Count; ++m) {
+                                var result = Native.wfc_world_state_slot_module_set(wfcWorldStateHandle, x, y, z, m, 0);
+                                switch (result) {
+                                    case WfcWorldStateSlotModuleSetResult.Ok:
+                                        break;
+                                    case WfcWorldStateSlotModuleSetResult.ErrSlotOutOfBounds:
+                                    case WfcWorldStateSlotModuleSetResult.ErrModuleOutOfBounds:
+                                    default:
+                                        Debug.Assert(false);
+                                        return;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Set modules provided by user
+                for (var i = 0; i < worldSlotMinCount; ++i) {
+                    var position = worldSlotPositions[i];
+                    var moduleStr = worldSlotModules[i];
+
+                    int slotXInt = (int)Math.Round(position.X);
+                    int slotYInt = (int)Math.Round(position.Y);
+                    int slotZInt = (int)Math.Round(position.Z);
+
+                    if (slotXInt < 0) {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                          "Slot X must be a nonnegative integer");
+                        return;
+                    }
+                    if (slotYInt < 0) {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                          "Slot Y must be a nonnegative integer");
+                        return;
+                    }
+                    if (slotZInt < 0) {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                          "World Z must be a nonnegative integer");
+                        return;
+                    }
+
+                    ushort x = (ushort)slotXInt;
+                    ushort y = (ushort)slotYInt;
+                    ushort z = (ushort)slotZInt;
+
+                    if (nameToModule.TryGetValue(moduleStr.ToString(), out ushort m)) {
+                        var result = Native.wfc_world_state_slot_module_set(wfcWorldStateHandle, x, y, z, m, 1);
+                        switch (result) {
+                            case WfcWorldStateSlotModuleSetResult.Ok:
+                                break;
+                            case WfcWorldStateSlotModuleSetResult.ErrSlotOutOfBounds:
+                            case WfcWorldStateSlotModuleSetResult.ErrModuleOutOfBounds:
+                            default:
+                                Debug.Assert(false);
+                                return;
+                        }
+                    } else {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                          "Slot module list (SM) contains module not found in the ruleset: " + moduleStr);
+                        return;
+                    }
+                }
+
                 {
-                    var result = Native.wfc_world_state_slots_set(wfcWorldStateHandle,
-                                                                  slotsPtr,
-                                                                  (UIntPtr)slots.Length);
-                    switch (result)
-                    {
-                        case WfcWorldStateSlotsSetResult.Ok:
-                            // All good
-                            stats.worldNotCanonical = false;
+                    var result = Native.wfc_world_state_canonicalize(wfcWorldStateHandle);
+                    switch (result) {
+                        case WfcWorldStateCanonicalizeResult.OkDeterministic:
+                        case WfcWorldStateCanonicalizeResult.OkNondeterministic:
+                        case WfcWorldStateCanonicalizeResult.OkContradiction:
+                            // We could potentially early out here if we have a contradiction.
                             break;
-                        case WfcWorldStateSlotsSetResult.OkWorldNotCanonical:
-                            // All good, but we the slots we gave were not
-                            // canonical. wfc_world_state_slots_set fixed that for us.
-                            stats.worldNotCanonical = true;
-                            break;
-                        case WfcWorldStateSlotsSetResult.ErrWorldContradictory:
-                            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                              "WFC solver failed: World state is contradictory");
-                            return;
-                        default:
-                            Debug.Assert(false);
-                            return;
                     }
                 }
 
@@ -447,88 +408,73 @@ namespace wfc_gh
             uint maxObservations = UInt32.MaxValue;
             uint spentObservations = 0;
 
-            unsafe{
-                while (true)
-                {
+            unsafe {
+                while (true) {
                     var result = Native.wfc_observe(wfcWorldStateHandle,
                                                     wfcRngStateHandle,
                                                     maxObservations,
                                                     &spentObservations);
-                    attempts++;
-                    foundDeterministic = result == WfcObserveResult.Deterministic;
+                    
+                    if (result == WfcObserveResult.ErrNotCanonical) {
+                        Debug.Assert(false);
+                        return;
+                    }
 
-                    if (foundDeterministic
-                        || result == WfcObserveResult.Nondeterministic
-                        || attempts == maxAttempts) {
+                    attempts++;
+                    foundDeterministic = result == WfcObserveResult.OkDeterministic;
+
+                    if (foundDeterministic || result == WfcObserveResult.OkNondeterministic || attempts == maxAttempts) {
                         break;
                     }
                     Native.wfc_world_state_clone_from(wfcWorldStateHandle, wfcWorldStateHandleBackup);
                 }
             }
 
-            if (!foundDeterministic)
-            {
+            if (!foundDeterministic) {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                   "WFC solver failed to find solution within " + maxAttempts + " attempts");
                 return;
             }
 
-            unsafe
-            {
-                fixed (SlotState* slotsPtr = &slots[0])
-                {
-                    Native.wfc_world_state_slots_get(wfcWorldStateHandle,
-                                                     slotsPtr,
-                                                     (UIntPtr)slots.Length);
-                }
-            }
-
-            Native.wfc_world_state_free(wfcWorldStateHandle);
-            Native.wfc_rng_state_free(wfcRngStateHandle);
-
             //
-            // -- Output: World state --
+            // -- Output World state --
             //
-            // The resulting world state is in the flat bit-vector format. Since we
-            // early-out on nondeterministic results, we can assume exactly one bit
-            // being set here and can therefore produce a flat list on output.
-
             worldSlotPositions.Clear();
             worldSlotModules.Clear();
-            for (var i = 0; i < slots.Length; ++i)
-            {
-                // Because WFC finished successfully, we assume the result is
-                // deterministic and only take the first set bit. short.MinValue
-                // is used as a sentinel for uninitialized and we later assert
-                // it has been set.
-                short module = short.MinValue;
-                for (int blkIndex = 0; blkIndex < 4 && module == short.MinValue; ++blkIndex)
-                {
-                    for (int bitIndex = 0; bitIndex < 64 && module == short.MinValue; ++bitIndex)
-                    {
-                        unsafe
-                        {
-                            if ((slots[i].slot_state[blkIndex] & (1ul << bitIndex)) != 0)
-                            {
-                                module = (short)(64 * blkIndex + bitIndex);
+
+            unsafe {
+                for (ushort z = 0; z < worldZ; ++z) {
+                    for (ushort y = 0; y < worldY; ++y) {
+                        for (ushort x = 0; x < worldX; ++x) {
+                            for (ushort m = 0; m < nameToModule.Count; ++m) {
+                                uint value = 0;
+                                var result = Native.wfc_world_state_slot_module_get(wfcWorldStateHandle, x, y, z, m, &value);
+                                switch (result) {
+                                    case WfcWorldStateSlotModuleGetResult.Ok:
+                                        break;
+                                    case WfcWorldStateSlotModuleGetResult.ErrSlotOutOfBounds:
+                                    case WfcWorldStateSlotModuleGetResult.ErrModuleOutOfBounds:
+                                    default:
+                                        Debug.Assert(false);
+                                        return;
+                                }
+
+                                if (value == 1) {
+                                    Debug.Assert(m < maxModuleCount);
+                                    moduleToName.TryGetValue(m, out string moduleStr);
+
+                                    worldSlotPositions.Add(new Vector3d(x, y, z));
+                                    worldSlotModules.Add(moduleStr);
+                                }
                             }
                         }
                     }
                 }
-
-                string moduleStr = "<unknown>";
-                Debug.Assert(module >= 0);
-                Debug.Assert(module <= byte.MaxValue);
-                Debug.Assert(module < maxModuleCount);
-                moduleToName.TryGetValue((byte)module, out moduleStr);
-
-                long slotX = i % worldSlotsPerLayer % worldSlotsPerRow;
-                long slotY = i % worldSlotsPerLayer / worldSlotsPerRow;
-                long slotZ = i / worldSlotsPerLayer;
-
-                worldSlotPositions.Add(new Vector3d(slotX, slotY, slotZ));
-                worldSlotModules.Add(moduleStr);
             }
+
+            Native.wfc_world_state_free(wfcWorldStateHandle);
+            Native.wfc_world_state_free(wfcWorldStateHandleBackup);
+            Native.wfc_rng_state_free(wfcRngStateHandle);
 
             stats.ruleCount = (uint)adjacencyRulesMinCount;
             stats.moduleCount = (uint)moduleToName.Count;
@@ -540,15 +486,12 @@ namespace wfc_gh
         }
     }
 
-    internal struct Stats
-    {
+    internal struct Stats {
         public uint ruleCount;
         public uint moduleCount;
         public uint solveAttempts;
-        public bool worldNotCanonical;
 
-        public override string ToString()
-        {
+        public override string ToString() {
             StringBuilder b = new StringBuilder(128);
 
             b.Append("Rule count: ");
@@ -561,32 +504,24 @@ namespace wfc_gh
             b.Append(solveAttempts);
             b.AppendLine();
 
-            if (worldNotCanonical)
-            {
-                b.AppendLine("Warning: Initial world state is not canonical");
-            }
-
             return b.ToString();
         }
     }
 
-    internal enum AdjacencyRuleKind : uint
-    {
+    internal enum AdjacencyRuleKind : uint {
         X = 0,
         Y = 1,
         Z = 2,
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal struct AdjacencyRule
-    {
+    internal struct AdjacencyRule {
         public AdjacencyRuleKind kind;
-        public byte module_low;
-        public byte module_high;
+        public ushort module_low;
+        public ushort module_high;
     }
 
-    internal enum WfcWorldStateInitResult : uint
-    {
+    internal enum WfcWorldStateInitResult : uint {
         Ok = 0,
         ErrModuleCountTooHigh = 1,
         ErrWorldDimensionsZero = 2,
@@ -594,118 +529,112 @@ namespace wfc_gh
         ErrRulesHaveGaps = 4,
     }
 
-    internal enum WfcWorldStateCloneFromResult : uint
-    {
+    internal enum WfcWorldStateCloneFromResult : uint {
         Ok = 0,
         ErrIncompatible = 1,
     }
 
-    internal enum WfcWorldStateSlotModuleSetResult : uint
-    {
+    internal enum WfcWorldStateSlotModuleSetResult : uint {
         Ok = 0,
         ErrSlotOutOfBounds = 1,
         ErrModuleOutOfBounds = 2,
     }
 
-    internal enum WfcWorldStateSlotModuleGetResult : uint
-    {
+    internal enum WfcWorldStateSlotModuleGetResult : uint {
         Ok = 0,
         ErrSlotOutOfBounds = 1,
         ErrModuleOutOfBounds = 2,
     }
 
-    internal enum WfcWorldStateSlotModuleWeightSetResult : uint
-    {
+    internal enum WfcWorldStateSlotModuleWeightSetResult : uint {
         Ok = 0,
         ErrSlotOutOfBounds = 1,
         ErrModuleOutOfBounds = 2,
         ErrWeightNotNormalPositive = 3,
     }
 
-    internal enum WfcWorldStateCanonicalizeResult : uint
-    {
+    internal enum WfcWorldStateCanonicalizeResult : uint {
         OkDeterministic = 0,
         OkNondeterministic = 1,
         OkContradiction = 2,
     }
 
-    internal enum WfcObserveResult: uint
-    {
+    internal enum WfcObserveResult : uint {
         OkDeterministic = 0,
         OkNondeterministic = 1,
         OkContradiction = 2,
         ErrNotCanonical = 3,
     }
 
-    internal class Native
-    {
+    internal class Native {
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern uint wfc_query_max_module_count();
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_query_max_module_count();
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern uint wfc_feature_weighted_entropy();
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_feature_weighted_entropy();
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern uint wfc_feature_weighted_observation();
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_feature_weighted_observation();
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static unsafe extern WfcWorldStateInitResult wfc_world_state_init(IntPtr* wfc_world_state_handle_ptr,
-                                                                               AdjacencyRule* adjacency_rules_ptr,
-                                                                               UIntPtr adjacency_rules_len,
-                                                                               ushort world_x,
-                                                                               ushort world_y,
-                                                                               ushort world_z,
-                                                                               uint features);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcWorldStateInitResult wfc_world_state_init(IntPtr* wfc_world_state_handle_ptr,
+                                                                                   AdjacencyRule* adjacency_rules_ptr,
+                                                                                   UIntPtr adjacency_rules_len,
+                                                                                   ushort world_x,
+                                                                                   ushort world_y,
+                                                                                   ushort world_z,
+                                                                                   uint features);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static unsafe extern void wfc_world_state_init_from(IntPtr* wfc_world_state_handle_ptr,
-                                                                 IntPtr source_wfc_world_state_handle);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern void wfc_world_state_init_from(IntPtr* wfc_world_state_handle_ptr,
+                                                                     IntPtr source_wfc_world_state_handle);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static unsafe extern WfcWorldStateCloneFromResult wfc_world_state_clone_from(IntPtr destination_wfc_world_state_handle,
-                                                                                          IntPtr source_wfc_world_state_handle);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcWorldStateCloneFromResult wfc_world_state_clone_from(IntPtr destination_wfc_world_state_handle,
+                                                                                              IntPtr source_wfc_world_state_handle);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern void wfc_world_state_free(IntPtr wfc_world_state_handle);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern void wfc_world_state_free(IntPtr wfc_world_state_handle);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern WfcWorldStateSlotModuleSetResult wfc_world_state_slot_module_set(IntPtr wfc_world_state_handle,
-                                                                                            ushort pos_x,
-                                                                                            ushort pos_y,
-                                                                                            ushort pos_z,
-                                                                                            ushort module,
-                                                                                            uint value);
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern WfcWorldStateSlotModuleGetResult wfc_world_state_slot_module_get(IntPtr wfc_world_state_handle,
-                                                                                            ushort pos_x,
-                                                                                            ushort pos_y,
-                                                                                            ushort pos_z,
-                                                                                            ushort module,
-                                                                                            uint* value);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern WfcWorldStateSlotModuleSetResult wfc_world_state_slot_module_set(IntPtr wfc_world_state_handle,
+                                                                                                ushort pos_x,
+                                                                                                ushort pos_y,
+                                                                                                ushort pos_z,
+                                                                                                ushort module,
+                                                                                                uint value);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcWorldStateSlotModuleGetResult wfc_world_state_slot_module_get(IntPtr wfc_world_state_handle,
+                                                                                                       ushort pos_x,
+                                                                                                       ushort pos_y,
+                                                                                                       ushort pos_z,
+                                                                                                       ushort module,
+                                                                                                       uint* value);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern WfcWorldStateSlotModuleWeightSetResult wfc_world_state_slot_module_set(IntPtr wfc_world_state_handle,
-                                                                                                  ushort pos_x,
-                                                                                                  ushort pos_y,
-                                                                                                  ushort pos_z,
-                                                                                                  ushort module,
-                                                                                                  float weight);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcWorldStateSlotModuleWeightSetResult wfc_world_state_slot_module_weight_set(IntPtr wfc_world_state_handle,
+                                                                                                                    ushort pos_x,
+                                                                                                                    ushort pos_y,
+                                                                                                                    ushort pos_z,
+                                                                                                                    ushort module,
+                                                                                                                    float weight);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static unsafe extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
-                                                          ulong rng_seed_low,
-                                                          ulong rng_seed_high);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
+                                                              ulong rng_seed_low,
+                                                              ulong rng_seed_high);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static extern void wfc_rng_state_free(IntPtr wfc_rng_state_handle);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern void wfc_rng_state_free(IntPtr wfc_rng_state_handle);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static unsafe extern WfcWorldStateCanonicalizeResult wfc_world_state_canonicalize(IntPtr wfc_world_state_handle);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcWorldStateCanonicalizeResult wfc_world_state_canonicalize(IntPtr wfc_world_state_handle);
 
-    [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-    internal static unsafe extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
-                                                               IntPtr wfc_rng_state_handle,
-                                                               uint max_observations,
-                                                               uint* spent_observations);
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
+                                                                   IntPtr wfc_rng_state_handle,
+                                                                   uint max_observations,
+                                                                   uint* spent_observations);
+    }
 }
