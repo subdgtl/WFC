@@ -13,17 +13,17 @@ enum class AdjacencyRuleKind : uint32_t {
   Z = 2,
 };
 
-enum class WfcCanonicalizeResult : uint32_t {
-  OkDeterministic = 0,
-  OkNondeterministic = 1,
-  OkContradiction = 2,
-};
-
 enum class WfcObserveResult : uint32_t {
   OkDeterministic = 0,
   OkNondeterministic = 1,
   OkContradiction = 2,
   ErrNotCanonical = 3,
+};
+
+enum class WfcWorldStateCanonicalizeResult : uint32_t {
+  OkDeterministic = 0,
+  OkNondeterministic = 1,
+  OkContradiction = 2,
 };
 
 enum class WfcWorldStateCloneFromResult : uint32_t {
@@ -285,7 +285,7 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
 //   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
 //   [`wfc_world_state_init_from`] and not yet freed via
 //   [`wfc_world_state_free`].
-WfcCanonicalizeResult wfc_world_canonicalize(WfcWorldStateHandle wfc_world_state_handle);
+WfcWorldStateCanonicalizeResult wfc_world_state_canonicalize(WfcWorldStateHandle wfc_world_state_handle);
 
 // Runs observations on the world until a deterministic or contradictory result
 // is found.

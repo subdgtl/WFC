@@ -446,7 +446,7 @@ pub unsafe extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHan
 }
 
 #[repr(u32)]
-pub enum WfcCanonicalizeResult {
+pub enum WfcWorldStateCanonicalizeResult {
     OkDeterministic = 0,
     OkNondeterministic = 1,
     OkContradiction = 2,
@@ -472,9 +472,9 @@ pub enum WfcCanonicalizeResult {
 ///   [`wfc_world_state_init_from`] and not yet freed via
 ///   [`wfc_world_state_free`].
 #[no_mangle]
-pub unsafe extern "C" fn wfc_world_canonicalize(
+pub unsafe extern "C" fn wfc_world_state_canonicalize(
     wfc_world_state_handle: WfcWorldStateHandle,
-) -> WfcCanonicalizeResult {
+) -> WfcWorldStateCanonicalizeResult {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &mut *wfc_world_state_handle.0
@@ -483,9 +483,9 @@ pub unsafe extern "C" fn wfc_world_canonicalize(
     let (_, world_status) = world.canonicalize();
 
     match world_status {
-        WorldStatus::Deterministic => WfcCanonicalizeResult::OkDeterministic,
-        WorldStatus::Nondeterministic => WfcCanonicalizeResult::OkNondeterministic,
-        WorldStatus::Contradiction => WfcCanonicalizeResult::OkContradiction,
+        WorldStatus::Deterministic => WfcWorldStateCanonicalizeResult::OkDeterministic,
+        WorldStatus::Nondeterministic => WfcWorldStateCanonicalizeResult::OkNondeterministic,
+        WorldStatus::Contradiction => WfcWorldStateCanonicalizeResult::OkContradiction,
     }
 }
 
