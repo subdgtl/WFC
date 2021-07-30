@@ -94,7 +94,11 @@ namespace wfc_gh {
         }
 
         protected override void SolveInstance(IGH_DataAccess DA) {
-            Stats stats = new Stats();
+            var stats = new Stats();
+            var stopwatch = new Stopwatch();
+
+            stopwatch.Reset();
+            stopwatch.Start();
 
             //
             // -- Adjacency rules --
@@ -403,6 +407,11 @@ namespace wfc_gh {
                 Native.wfc_world_state_init_from(&wfcWorldStateHandleBackup, wfcWorldStateHandle);
             }
 
+            stats.inPhaseMillis = stopwatch.ElapsedMilliseconds;
+            stopwatch.Stop();
+            stopwatch.Reset();
+            stopwatch.Start();
+
             bool foundDeterministic = false;
             uint attempts = 0;
             uint maxObservations = UInt32.MaxValue;
@@ -435,6 +444,11 @@ namespace wfc_gh {
                                   "WFC solver failed to find solution within " + maxAttempts + " attempts");
                 return;
             }
+
+            stats.computePhaseMillis = stopwatch.ElapsedMilliseconds;
+            stopwatch.Stop();
+            stopwatch.Reset();
+            stopwatch.Start();
 
             //
             // -- Output World state --
@@ -476,6 +490,9 @@ namespace wfc_gh {
             Native.wfc_world_state_free(wfcWorldStateHandleBackup);
             Native.wfc_rng_state_free(wfcRngStateHandle);
 
+            stats.outPhaseMillis = stopwatch.ElapsedMilliseconds;
+            stopwatch.Stop();
+
             stats.ruleCount = (uint)adjacencyRulesMinCount;
             stats.moduleCount = (uint)moduleToName.Count;
             stats.solveAttempts = attempts;
@@ -491,6 +508,10 @@ namespace wfc_gh {
         public uint moduleCount;
         public uint solveAttempts;
 
+        public long inPhaseMillis;
+        public long computePhaseMillis;
+        public long outPhaseMillis;
+
         public override string ToString() {
             StringBuilder b = new StringBuilder(128);
 
@@ -502,6 +523,18 @@ namespace wfc_gh {
             b.AppendLine();
             b.Append("Solve attempts: ");
             b.Append(solveAttempts);
+            b.AppendLine();
+            b.Append("In Phase time: ");
+            b.Append(inPhaseMillis);
+            b.Append("ms");
+            b.AppendLine();
+            b.Append("Compute Phase time: ");
+            b.Append(computePhaseMillis);
+            b.Append("ms");
+            b.AppendLine();
+            b.Append("Out Phase time: ");
+            b.Append(outPhaseMillis);
+            b.Append("ms");
             b.AppendLine();
 
             return b.ToString();
