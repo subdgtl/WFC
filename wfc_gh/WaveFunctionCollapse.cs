@@ -314,6 +314,7 @@ namespace wfc_gh {
                                               "WFC solver failed: No rules provided");
                             return;
                         case WfcWorldStateInitResult.ErrRulesHaveGaps:
+                            // This is an error in data preprocessing
                             Debug.Assert(false);
                             return;
                         default:
@@ -380,6 +381,7 @@ namespace wfc_gh {
                         switch (result) {
                             case WfcWorldStateSlotModuleSetResult.Ok:
                                 break;
+                            // XXX: This is a user error
                             case WfcWorldStateSlotModuleSetResult.ErrSlotOutOfBounds:
                             case WfcWorldStateSlotModuleSetResult.ErrModuleOutOfBounds:
                             default:
@@ -399,7 +401,8 @@ namespace wfc_gh {
                         case WfcWorldStateCanonicalizeResult.OkDeterministic:
                         case WfcWorldStateCanonicalizeResult.OkNondeterministic:
                         case WfcWorldStateCanonicalizeResult.OkContradiction:
-                            // We could potentially early out here if we have a contradiction.
+                            // We could potentially early out here if we are deterministic, or have a contradiction
+                            // but wfc_observe deals with that too.
                             break;
                     }
                 }
@@ -474,7 +477,6 @@ namespace wfc_gh {
                                 }
 
                                 if (value == 1) {
-                                    Debug.Assert(m < maxModuleCount);
                                     moduleToName.TryGetValue(m, out string moduleStr);
 
                                     worldSlotPositions.Add(new Vector3d(x, y, z));
@@ -486,6 +488,7 @@ namespace wfc_gh {
                 }
             }
 
+            // XXX: don't forget to free for early exits
             Native.wfc_world_state_free(wfcWorldStateHandle);
             Native.wfc_world_state_free(wfcWorldStateHandleBackup);
             Native.wfc_rng_state_free(wfcRngStateHandle);
