@@ -299,7 +299,6 @@ namespace wfc_gh {
 
                     switch (result) {
                         case WfcWorldStateInitResult.Ok:
-                            // All good
                             break;
                         case WfcWorldStateInitResult.ErrModuleCountTooHigh:
                             AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
@@ -314,7 +313,7 @@ namespace wfc_gh {
                                               "WFC solver failed: No rules provided");
                             return;
                         case WfcWorldStateInitResult.ErrRulesHaveGaps:
-                            // This is an error in data preprocessing
+                            // This is an error in our rules import, not a user error
                             Debug.Assert(false);
                             return;
                         default:
@@ -322,8 +321,6 @@ namespace wfc_gh {
                             return;
                     }
                 }
-
-                Native.wfc_rng_state_init(&wfcRngStateHandle, rngSeedLow, rngSeedHigh);
             }
 
             unsafe {
@@ -352,37 +349,33 @@ namespace wfc_gh {
                     var position = worldSlotPositions[i];
                     var moduleStr = worldSlotModules[i];
 
-                    int slotXInt = (int)Math.Round(position.X);
-                    int slotYInt = (int)Math.Round(position.Y);
-                    int slotZInt = (int)Math.Round(position.Z);
+                    int xInt = (int)Math.Round(position.X);
+                    int yInt = (int)Math.Round(position.Y);
+                    int zInt = (int)Math.Round(position.Z);
 
-                    if (slotXInt < 0) {
+                    if (xInt < 0 || yInt < 0 || zInt < 0) {
                         AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                          "Slot X must be a nonnegative integer");
-                        return;
-                    }
-                    if (slotYInt < 0) {
-                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                          "Slot Y must be a nonnegative integer");
-                        return;
-                    }
-                    if (slotZInt < 0) {
-                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                          "World Z must be a nonnegative integer");
+                                          "Slot positions must be nonnegative integers");
+
+                        Native.wfc_world_state_free(wfcWorldStateHandle);
                         return;
                     }
 
-                    ushort x = (ushort)slotXInt;
-                    ushort y = (ushort)slotYInt;
-                    ushort z = (ushort)slotZInt;
+                    ushort x = (ushort)xInt;
+                    ushort y = (ushort)yInt;
+                    ushort z = (ushort)zInt;
 
                     if (nameToModule.TryGetValue(moduleStr.ToString(), out ushort m)) {
                         var result = Native.wfc_world_state_slot_module_set(wfcWorldStateHandle, x, y, z, m, 1);
                         switch (result) {
                             case WfcWorldStateSlotModuleSetResult.Ok:
                                 break;
-                            // XXX: This is a user error
                             case WfcWorldStateSlotModuleSetResult.ErrSlotOutOfBounds:
+                                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                                  "Provided slots must be within bounds of the world");
+
+                                Native.wfc_world_state_free(wfcWorldStateHandle);
+                                return;
                             case WfcWorldStateSlotModuleSetResult.ErrModuleOutOfBounds:
                             default:
                                 Debug.Assert(false);
@@ -391,6 +384,8 @@ namespace wfc_gh {
                     } else {
                         AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                           "Slot module list (SM) contains module not found in the ruleset: " + moduleStr);
+
+                        Native.wfc_world_state_free(wfcWorldStateHandle);
                         return;
                     }
                 }
@@ -408,6 +403,7 @@ namespace wfc_gh {
                 }
 
                 Native.wfc_world_state_init_from(&wfcWorldStateHandleBackup, wfcWorldStateHandle);
+                Native.wfc_rng_state_init(&wfcRngStateHandle, rngSeedLow, rngSeedHigh);
             }
 
             stats.inPhaseMillis = stopwatch.ElapsedMilliseconds;
@@ -415,7 +411,6 @@ namespace wfc_gh {
             stopwatch.Reset();
             stopwatch.Start();
 
-            bool foundDeterministic = false;
             uint attempts = 0;
             uint maxObservations = UInt32.MaxValue;
             uint spentObservations = 0;
@@ -426,26 +421,18 @@ namespace wfc_gh {
                                                     wfcRngStateHandle,
                                                     maxObservations,
                                                     &spentObservations);
-                    
+
                     if (result == WfcObserveResult.ErrNotCanonical) {
                         Debug.Assert(false);
                         return;
                     }
 
-                    attempts++;
-                    foundDeterministic = result == WfcObserveResult.OkDeterministic;
-
-                    if (foundDeterministic || result == WfcObserveResult.OkNondeterministic || attempts == maxAttempts) {
+                    if (result == WfcObserveResult.OkDeterministic || result == WfcObserveResult.OkNondeterministic || attempts == maxAttempts) {
                         break;
                     }
+
                     Native.wfc_world_state_clone_from(wfcWorldStateHandle, wfcWorldStateHandleBackup);
                 }
-            }
-
-            if (!foundDeterministic) {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                                  "WFC solver failed to find solution within " + maxAttempts + " attempts");
-                return;
             }
 
             stats.computePhaseMillis = stopwatch.ElapsedMilliseconds;
@@ -488,7 +475,6 @@ namespace wfc_gh {
                 }
             }
 
-            // XXX: don't forget to free for early exits
             Native.wfc_world_state_free(wfcWorldStateHandle);
             Native.wfc_world_state_free(wfcWorldStateHandleBackup);
             Native.wfc_rng_state_free(wfcRngStateHandle);
@@ -516,25 +502,30 @@ namespace wfc_gh {
         public long outPhaseMillis;
 
         public override string ToString() {
-            StringBuilder b = new StringBuilder(128);
+            StringBuilder b = new StringBuilder(256);
 
             b.Append("Rule count: ");
             b.Append(ruleCount);
             b.AppendLine();
+
             b.Append("Module count: ");
             b.Append(moduleCount);
             b.AppendLine();
+
             b.Append("Solve attempts: ");
             b.Append(solveAttempts);
             b.AppendLine();
+
             b.Append("In Phase time: ");
             b.Append(inPhaseMillis);
             b.Append("ms");
             b.AppendLine();
+
             b.Append("Compute Phase time: ");
             b.Append(computePhaseMillis);
             b.Append("ms");
             b.AppendLine();
+
             b.Append("Out Phase time: ");
             b.Append(outPhaseMillis);
             b.Append("ms");
