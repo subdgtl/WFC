@@ -36,6 +36,11 @@ impl From<Direction> for AdjacencyRuleKind {
     }
 }
 
+// TODO(yan): @Speed @Memory Because we now support a lot of modules, it is
+// entirely possible to have > 10k, or even 100k rules (hard limit is around 3
+// million). Does it make sense to make AdjacencyRule more compact for faster
+// iteration?
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AdjacencyRule {
@@ -377,7 +382,7 @@ impl World {
     }
 }
 
-// TODO(yan): @Cleanup algorithmize this.
+// TODO(yan): @Cleanup Algorithmize this.
 fn find_block_count_for_module_count(module_count: u16) -> Option<usize> {
     match module_count {
         1..=58 => Some(1),
@@ -865,8 +870,8 @@ mod worldinnerconst {
 
             for i in 0..self.slots.len() {
                 // Even if propagation tells us there is a contradiction, we
-                // continue until we canonicalize the whole world. This is because
-                // we to set slots_modified = false.
+                // continue until we canonicalize the whole world. This is
+                // because we have to set slots_modified = false.
 
                 let (changed, _) = self.propagate_constraints(i);
 
