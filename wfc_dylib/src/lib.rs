@@ -242,7 +242,7 @@ pub enum WfcWorldStateSlotModuleSetResult {
 
 /// Stores one Wave Function Collapse module into a slot of the provided handle.
 ///
-/// Nonzero values count as `true`.
+/// Nonzero values of `module_is_set` count as `true`.
 ///
 /// Setting a slot changes the world from canonical to modified state, meaning
 /// the library does not know for certain if all WFC constraints are upheld. It
@@ -266,7 +266,7 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_set(
     pos_y: u16,
     pos_z: u16,
     module: u16,
-    value: u32,
+    module_is_set: u32,
 ) -> WfcWorldStateSlotModuleSetResult {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
@@ -282,7 +282,7 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_set(
         return WfcWorldStateSlotModuleSetResult::ErrModuleOutOfBounds;
     }
 
-    world.set_slot_module([pos_x, pos_y, pos_z], module, value > 0);
+    world.set_slot_module([pos_x, pos_y, pos_z], module, module_is_set > 0);
 
     WfcWorldStateSlotModuleSetResult::Ok
 }
@@ -295,7 +295,7 @@ pub enum WfcWorldStateSlotModuleGetResult {
 }
 
 /// Loads one Wave Function Collapse module from a slot of the provided handle
-/// into `value`.
+/// into `module_is_set`.
 ///
 /// If the module is present, the value will be 1, otherwise 0.
 ///
@@ -308,7 +308,7 @@ pub enum WfcWorldStateSlotModuleGetResult {
 ///   [`wfc_world_state_init_from`] and not yet freed via
 ///   [`wfc_world_state_free`],
 ///
-/// - `value` must be a non-null, aligned pointer to a [`u32`].
+/// - `module_is_set` must be a non-null, aligned pointer to a [`u32`].
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_slot_module_get(
     wfc_world_state_handle: WfcWorldStateHandle,
@@ -316,16 +316,16 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_get(
     pos_y: u16,
     pos_z: u16,
     module: u16,
-    value: *mut u32,
+    module_is_set: *mut u32,
 ) -> WfcWorldStateSlotModuleGetResult {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &*wfc_world_state_handle.0
     };
 
-    let out_value = {
-        assert!(!value.is_null());
-        &mut *value
+    let out_module_is_set = {
+        assert!(!module_is_set.is_null());
+        &mut *module_is_set
     };
 
     let [dim_x, dim_y, dim_z] = world.dims();
@@ -338,9 +338,9 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_get(
     }
 
     if world.slot_module([pos_x, pos_y, pos_z], module) {
-        *out_value = 1;
+        *out_module_is_set = 1;
     } else {
-        *out_value = 0;
+        *out_module_is_set = 0;
     }
 
     WfcWorldStateSlotModuleGetResult::Ok
@@ -445,13 +445,6 @@ pub unsafe extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHan
     Box::from_raw(wfc_rng_state_handle.0);
 }
 
-#[repr(u32)]
-pub enum WfcWorldStateCanonicalizeResult {
-    OkDeterministic = 0,
-    OkNondeterministic = 1,
-    OkContradiction = 2,
-}
-
 /// Canonicalizes a Wave Function Collapse world.
 ///
 /// While the initially created world starts in a canonical state, setting slots
@@ -474,40 +467,42 @@ pub enum WfcWorldStateCanonicalizeResult {
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_canonicalize(
     wfc_world_state_handle: WfcWorldStateHandle,
-) -> WfcWorldStateCanonicalizeResult {
+    world_status: *mut WorldStatus,
+) {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
         &mut *wfc_world_state_handle.0
     };
 
-    let (_, world_status) = world.canonicalize();
+    let out_world_status = {
+        assert!(!world_status.is_null());
+        &mut *world_status
+    };
 
-    match world_status {
-        WorldStatus::Deterministic => WfcWorldStateCanonicalizeResult::OkDeterministic,
-        WorldStatus::Nondeterministic => WfcWorldStateCanonicalizeResult::OkNondeterministic,
-        WorldStatus::Contradiction => WfcWorldStateCanonicalizeResult::OkContradiction,
-    }
+    let (_, status) = world.canonicalize();
+
+    *out_world_status = status;
 }
 
 #[repr(u32)]
 pub enum WfcObserveResult {
-    OkDeterministic = 0,
-    OkNondeterministic = 1,
-    OkContradiction = 2,
-    ErrNotCanonical = 3,
+    Ok = 0,
+    ErrNotCanonical = 1,
 }
 
 /// Runs observations on the world until a deterministic or contradictory result
 /// is found.
 ///
-/// Returns [`WfcObserveResult::Deterministic`], if the world ended up in a
-/// deterministic state or [`WfcObserveResult::Contradiction`] if the
-/// observation made by this function created a world where a slot is occupied
-/// by zero modules.
-///
 /// The number of performed observations can be limited if `max_observations`
 /// is set to a non-zero value. For zero the number of observations remains
 /// unlimited.
+///
+/// Outputs [`WorldStatus::Deterministic`], if the world ended up in a
+/// deterministic state or [`WorldStatus::Contradiction`] if the observation
+/// made by this function created a world where a slot is occupied by zero
+/// modules. [`WorldStatus::Nondeterministic`] can be outputted if the
+/// observation limit took effect sooner than the world could become
+/// deterministic or contradictory.
 ///
 /// # Safety
 ///
@@ -528,6 +523,7 @@ pub unsafe extern "C" fn wfc_observe(
     wfc_rng_state_handle: WfcRngStateHandle,
     max_observations: u32,
     spent_observations: *mut u32,
+    world_status: *mut WorldStatus,
 ) -> WfcObserveResult {
     let world = {
         assert!(!wfc_world_state_handle.0.is_null());
@@ -544,16 +540,18 @@ pub unsafe extern "C" fn wfc_observe(
         &mut *spent_observations
     };
 
+    let out_world_status = {
+        assert!(!world_status.is_null());
+        &mut *world_status
+    };
+
     if world.slots_modified() {
         return WfcObserveResult::ErrNotCanonical;
     }
 
     if max_observations == 0 {
-        return match world.world_status() {
-            WorldStatus::Deterministic => WfcObserveResult::OkDeterministic,
-            WorldStatus::Nondeterministic => WfcObserveResult::OkNondeterministic,
-            WorldStatus::Contradiction => WfcObserveResult::OkContradiction,
-        };
+        let status = world.world_status();
+        *out_world_status = status;
     }
 
     let mut observations = 0;
@@ -564,17 +562,23 @@ pub unsafe extern "C" fn wfc_observe(
         match status {
             WorldStatus::Deterministic => {
                 *out_observations = observations;
-                return WfcObserveResult::OkDeterministic;
+                *out_world_status = status;
+
+                return WfcObserveResult::Ok;
             }
             WorldStatus::Nondeterministic => {
                 if observations == max_observations {
                     *out_observations = observations;
-                    return WfcObserveResult::OkNondeterministic;
+                    *out_world_status = status;
+
+                    return WfcObserveResult::Ok;
                 }
             }
             WorldStatus::Contradiction => {
                 *out_observations = observations;
-                return WfcObserveResult::OkContradiction;
+                *out_world_status = status;
+
+                return WfcObserveResult::Ok;
             }
         }
     }

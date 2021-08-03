@@ -14,16 +14,8 @@ enum class AdjacencyRuleKind : uint32_t {
 };
 
 enum class WfcObserveResult : uint32_t {
-  OkDeterministic = 0,
-  OkNondeterministic = 1,
-  OkContradiction = 2,
-  ErrNotCanonical = 3,
-};
-
-enum class WfcWorldStateCanonicalizeResult : uint32_t {
-  OkDeterministic = 0,
-  OkNondeterministic = 1,
-  OkContradiction = 2,
+  Ok = 0,
+  ErrNotCanonical = 1,
 };
 
 enum class WfcWorldStateCloneFromResult : uint32_t {
@@ -56,6 +48,12 @@ enum class WfcWorldStateSlotModuleWeightSetResult : uint32_t {
   ErrSlotOutOfBounds = 1,
   ErrModuleOutOfBounds = 2,
   ErrWeightNotNormalPositive = 3,
+};
+
+enum class WorldStatus : uint32_t {
+  Nondeterministic = 0,
+  Deterministic = 1,
+  Contradiction = 2,
 };
 
 struct Rng;
@@ -176,7 +174,7 @@ void wfc_world_state_free(WfcWorldStateHandle wfc_world_state_handle);
 
 // Stores one Wave Function Collapse module into a slot of the provided handle.
 //
-// Nonzero values count as `true`.
+// Nonzero values of `module_is_set` count as `true`.
 //
 // Setting a slot changes the world from canonical to modified state, meaning
 // the library does not know for certain if all WFC constraints are upheld. It
@@ -198,10 +196,10 @@ WfcWorldStateSlotModuleSetResult wfc_world_state_slot_module_set(WfcWorldStateHa
                                                                  uint16_t pos_y,
                                                                  uint16_t pos_z,
                                                                  uint16_t module,
-                                                                 uint32_t value);
+                                                                 uint32_t module_is_set);
 
 // Loads one Wave Function Collapse module from a slot of the provided handle
-// into `value`.
+// into `module_is_set`.
 //
 // If the module is present, the value will be 1, otherwise 0.
 //
@@ -214,13 +212,13 @@ WfcWorldStateSlotModuleSetResult wfc_world_state_slot_module_set(WfcWorldStateHa
 //   [`wfc_world_state_init_from`] and not yet freed via
 //   [`wfc_world_state_free`],
 //
-// - `value` must be a non-null, aligned pointer to a [`u32`].
+// - `module_is_set` must be a non-null, aligned pointer to a [`u32`].
 WfcWorldStateSlotModuleGetResult wfc_world_state_slot_module_get(WfcWorldStateHandle wfc_world_state_handle,
                                                                  uint16_t pos_x,
                                                                  uint16_t pos_y,
                                                                  uint16_t pos_z,
                                                                  uint16_t module,
-                                                                 uint32_t *value);
+                                                                 uint32_t *module_is_set);
 
 // Stores a weight for one Wave Function Collapse slot into the provided handle.
 //
@@ -285,19 +283,22 @@ void wfc_rng_state_free(WfcRngStateHandle wfc_rng_state_handle);
 //   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
 //   [`wfc_world_state_init_from`] and not yet freed via
 //   [`wfc_world_state_free`].
-WfcWorldStateCanonicalizeResult wfc_world_state_canonicalize(WfcWorldStateHandle wfc_world_state_handle);
+void wfc_world_state_canonicalize(WfcWorldStateHandle wfc_world_state_handle,
+                                  WorldStatus *world_status);
 
 // Runs observations on the world until a deterministic or contradictory result
 // is found.
 //
-// Returns [`WfcObserveResult::Deterministic`], if the world ended up in a
-// deterministic state or [`WfcObserveResult::Contradiction`] if the
-// observation made by this function created a world where a slot is occupied
-// by zero modules.
-//
 // The number of performed observations can be limited if `max_observations`
 // is set to a non-zero value. For zero the number of observations remains
 // unlimited.
+//
+// Outputs [`WorldStatus::Deterministic`], if the world ended up in a
+// deterministic state or [`WorldStatus::Contradiction`] if the observation
+// made by this function created a world where a slot is occupied by zero
+// modules. [`WorldStatus::Nondeterministic`] can be outputted if the
+// observation limit took effect sooner than the world could become
+// deterministic or contradictory.
 //
 // # Safety
 //
@@ -315,6 +316,7 @@ WfcWorldStateCanonicalizeResult wfc_world_state_canonicalize(WfcWorldStateHandle
 WfcObserveResult wfc_observe(WfcWorldStateHandle wfc_world_state_handle,
                              WfcRngStateHandle wfc_rng_state_handle,
                              uint32_t max_observations,
-                             uint32_t *spent_observations);
+                             uint32_t *spent_observations,
+                             WorldStatus *world_status);
 
 } // extern "C"

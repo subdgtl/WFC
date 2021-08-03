@@ -188,11 +188,12 @@ impl Direction {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WorldStatus {
-    Deterministic,
-    Nondeterministic,
-    Contradiction,
+    Nondeterministic = 0,
+    Deterministic = 1,
+    Contradiction = 2,
 }
 
 impl fmt::Display for WorldStatus {
