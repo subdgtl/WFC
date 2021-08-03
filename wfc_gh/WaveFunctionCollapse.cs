@@ -120,7 +120,7 @@ namespace wfc_gh {
                                                            adjacencyRulesModuleLow.Count),
                                                   adjacencyRulesModuleHigh.Count);
 
-            if (adjacencyRulesMinCount <= 0) {
+            if (adjacencyRulesMinCount == 0) {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                   "Must supply at least one adjacency rule");
                 return;
