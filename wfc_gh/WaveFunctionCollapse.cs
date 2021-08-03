@@ -353,9 +353,9 @@ namespace wfc_gh {
                     int yInt = (int)Math.Round(position.Y);
                     int zInt = (int)Math.Round(position.Z);
 
-                    if (xInt < 0 || xInt >= Uint16.MaxValue ||
-                        yInt < 0 || yInt >= Uint16.MaxValue ||
-                        zInt < 0 || zInt >= Uint16.MaxValue) {
+                    if (xInt < 0 || xInt >= UInt16.MaxValue ||
+                        yInt < 0 || yInt >= UInt16.MaxValue ||
+                        zInt < 0 || zInt >= UInt16.MaxValue) {
                         AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
                                           "Slot positions must be nonnegative integers that fit in 16 bits");
 
@@ -428,19 +428,21 @@ namespace wfc_gh {
 
             unsafe {
                 while (true) {
+                    var status = WorldStatus.Nondeterministic;
                     var result = Native.wfc_observe(wfcWorldStateHandle,
                                                     wfcRngStateHandle,
                                                     maxObservations,
-                                                    &spentObservations);
+                                                    &spentObservations,
+                                                    &status);
 
                     attempts++;
 
-                    if (result == WfcObserveResult.ErrNotCanonical) {
+                    if (result != WfcObserveResult.Ok) {
                         Debug.Assert(false);
                         return;
                     }
 
-                    if (result == WfcObserveResult.OkDeterministic || result == WfcObserveResult.OkNondeterministic || attempts == maxAttempts) {
+                    if (status == WorldStatus.Deterministic || (status == WorldStatus.Nondeterministic && attempts == maxAttempts)) {
                         break;
                     }
 
@@ -604,7 +606,7 @@ namespace wfc_gh {
     }
 
     internal enum WfcObserveResult : uint {
-        OkDeterministic = 0,
+        Ok = 0,
         ErrNotCanonical = 1,
     }
 
@@ -671,8 +673,8 @@ namespace wfc_gh {
         internal static unsafe extern void wfc_rng_state_free(IntPtr wfc_rng_state_handle);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
-        internal static unsafe extern wfc_world_state_canonicalize(IntPtr wfc_world_state_handle,
-                                                                   WorldStatus* world_status);
+        internal static unsafe extern void wfc_world_state_canonicalize(IntPtr wfc_world_state_handle,
+                                                                        WorldStatus* world_status);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern WfcObserveResult wfc_observe(IntPtr wfc_world_state_handle,
