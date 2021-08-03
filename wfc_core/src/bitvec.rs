@@ -175,9 +175,9 @@ impl<'a, const N: usize> Iterator for BitVecIterator<'a, N> {
         // over, we mask them. Masks are computed from the the index to the bit
         // we would visit next.
 
-        // TODO(yan): @Correctness self.next likely won't be larger than than
-        // u32, but we'd love to prove this statically. Unfortunately, we need
-        // to bound N with usize, because it's a parameter for array size.
+        // TODO(yan): @Correctness self.next likely won't be larger than u32,
+        // but we'd love to prove this statically. Unfortunately, we need to
+        // bound N with usize, because it's a parameter for array size.
         let next = cast_u32(self.next);
 
         let mut size = 0;
