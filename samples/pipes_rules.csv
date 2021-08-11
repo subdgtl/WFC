@@ -32,7 +32,7 @@ x,cross,cross
 y,cross,cross
 z,cross,cross
 
-# The crossroad module with "-", "/", and "|" in their respectivve axes
+# The crossroad module with "-", "/", and "|" in their respective axes
 x,pipe_x,cross
 x,cross,pipe_x
 y,pipe_y,cross

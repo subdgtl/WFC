@@ -7,7 +7,7 @@ use std::str::FromStr as _;
 
 use regex::Regex;
 use tinyvec::TinyVec;
-use wfc_core::{Adjacency, AdjacencyKind, World};
+use wfc_core::{AdjacencyRule, AdjacencyRuleKind, World};
 
 use crate::convert::cast_u16;
 
@@ -55,9 +55,9 @@ impl From<csv::Error> for AdjacencyRulesImportError {
 }
 
 pub struct AdjacencyRulesImportResult {
-    pub adjacencies: Vec<Adjacency>,
-    pub name_to_module: HashMap<String, u8>,
-    pub module_to_name: HashMap<u8, String>,
+    pub adjacencies: Vec<AdjacencyRule>,
+    pub name_to_module: HashMap<String, u16>,
+    pub module_to_name: HashMap<u16, String>,
 }
 
 pub fn import_adjacency_rules<R: io::Read>(
@@ -66,10 +66,10 @@ pub fn import_adjacency_rules<R: io::Read>(
     log::info!("Importing adjacency rules CSV");
 
     let mut next_module = 0;
-    let mut module_to_name: HashMap<u8, String> = HashMap::new();
-    let mut name_to_module: HashMap<String, u8> = HashMap::new();
+    let mut module_to_name: HashMap<u16, String> = HashMap::new();
+    let mut name_to_module: HashMap<String, u16> = HashMap::new();
 
-    let mut adjacencies: Vec<Adjacency> = Vec::new();
+    let mut adjacencies: Vec<AdjacencyRule> = Vec::new();
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .comment(Some(b'#'))
@@ -101,9 +101,9 @@ pub fn import_adjacency_rules<R: io::Read>(
         }
 
         let kind = match kind_str {
-            "x" | "X" => AdjacencyKind::X,
-            "y" | "Y" => AdjacencyKind::Y,
-            "z" | "Z" => AdjacencyKind::Z,
+            "x" | "X" => AdjacencyRuleKind::X,
+            "y" | "Y" => AdjacencyRuleKind::Y,
+            "z" | "Z" => AdjacencyRuleKind::Z,
             _ => {
                 return Err(AdjacencyRulesImportError::InvalidAdjacencyRuleKind {
                     kind: kind_str.to_string(),
@@ -137,7 +137,7 @@ pub fn import_adjacency_rules<R: io::Read>(
             }
         };
 
-        adjacencies.push(Adjacency {
+        adjacencies.push(AdjacencyRule {
             kind,
             module_low,
             module_high,
@@ -211,7 +211,7 @@ pub fn import_world_state<R: io::BufRead>(
     mut r: R,
     world: &mut World,
     dims: [u16; 3],
-    name_to_module: &HashMap<String, u8>,
+    name_to_module: &HashMap<String, u16>,
 ) -> Result<(), InitialStateImportError> {
     log::info!("Importing initial state text");
 
@@ -257,7 +257,7 @@ pub fn import_world_state<R: io::BufRead>(
             for (x, slot_match) in slot_regex.find_iter(&line_buffer).enumerate() {
                 let slot_str = slot_match.as_str();
 
-                let mut slot: TinyVec<[u8; 8]> = TinyVec::new();
+                let mut slot: TinyVec<[u16; 8]> = TinyVec::new();
                 match slot_str {
                     SLOT_NAME_WILDCARD => slot.extend(name_to_module.values().copied()),
                     _ => {
@@ -305,7 +305,7 @@ pub fn import_world_state<R: io::BufRead>(
 pub fn export_world_state<W: io::Write>(
     w: &mut W,
     world: &World,
-    module_to_name: &HashMap<u8, String>,
+    module_to_name: &HashMap<u16, String>,
 ) {
     let dims = world.dims();
 
@@ -320,7 +320,7 @@ pub fn export_world_state<W: io::Write>(
         for z in (0..dims[2]).rev() {
             for y in (0..dims[1]).rev() {
                 for x in 0..dims[0] {
-                    let count = world.slot_modules_iter([x, y, z]).count();
+                    let count = world.slot_module_count([x, y, z]);
                     if count > largest {
                         largest = count;
                     }
@@ -339,8 +339,13 @@ pub fn export_world_state<W: io::Write>(
     for z in (0..dims[2]).rev() {
         for y in (0..dims[1]).rev() {
             for x in 0..dims[0] {
-                let modules_in_slot: TinyVec<[u8; 8]> =
-                    world.slot_modules_iter([x, y, z]).collect();
+                let mut modules_in_slot: TinyVec<[u16; 8]> = TinyVec::new();
+                for i in 0..world.module_count() {
+                    let module = cast_u16(i);
+                    if world.slot_module([x, y, z], module) {
+                        modules_in_slot.push(module);
+                    }
+                }
 
                 let slot_width = if x == dims[0] - 1 {
                     0
@@ -362,8 +367,8 @@ pub fn export_world_state<W: io::Write>(
 
 fn write_modules_in_slot<W: fmt::Write>(
     w: &mut W,
-    modules_in_slot: &[u8],
-    module_to_name: &HashMap<u8, String>,
+    modules_in_slot: &[u16],
+    module_to_name: &HashMap<u16, String>,
 ) {
     write!(w, "[").unwrap();
 
