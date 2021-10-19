@@ -2,11 +2,13 @@
 
 ## Unreleased
 
+- `Rng` now implements `Clone`.
+
 New features:
 
 - The solver now supports up to 1014 modules. Additionally, solver performance
   now improves compared to previous versions when less modules are used. For
-  more info, see [#24](https://github.com/subdgtl/WFC/pull/24)
+  more info, see [#24](https://github.com/subdgtl/WFC/pull/24).
 
 - The API of setting slot modules and slot module weights in `wfc_dylib` is now
   more granular and straightforward. Instead of providing arrays of data

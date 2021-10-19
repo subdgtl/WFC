@@ -137,6 +137,7 @@ pub fn index_to_position(dims: [u16; 3], index: usize) -> [u16; 3] {
 
 // Note: We could have used Rand32, but world position is up to 48 bits, so we
 // use 64 bit RNG.
+#[derive(Debug, Clone)]
 pub struct Rng(Rand64);
 
 impl Rng {
