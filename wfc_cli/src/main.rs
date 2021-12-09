@@ -151,7 +151,7 @@ fn main() {
 
             match status {
                 WorldStatus::Nondeterministic => {
-                    if observations % 100 == 0 {
+                    if observations % 1000 == 0 {
                         eprintln!(
                             "attempt: {:>4}, observation: {:>4}, {} (In progress)",
                             attempts, observations, status,
