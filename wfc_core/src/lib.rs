@@ -1,3 +1,5 @@
+#![feature(allocator_api)]
+
 mod bitvec;
 mod convert;
 mod world;

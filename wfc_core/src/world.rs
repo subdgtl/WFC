@@ -1,10 +1,11 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
 use std::error;
 use std::fmt;
 
 use arrayvec::ArrayVec;
+use bumpalo::Bump;
 use fxhash::FxBuildHasher;
+use hashbrown::HashSet;
 use oorandom::Rand64;
 
 use crate::bitvec::BitVec;
@@ -585,7 +586,6 @@ mod worldinner {
 mod worldinnerconst {
     use super::*;
 
-    #[derive(Clone)]
     pub struct WorldInnerConst<const N: usize> {
         dims: [u16; 3],
         adjacency_rules: Vec<AdjacencyRule>,
@@ -597,9 +597,7 @@ mod worldinnerconst {
         slots_modified: bool,
         slot_module_weights: Option<Vec<f32>>,
 
-        /// Working memory for picking the nondeterministic slot with smallest
-        /// entropy. Pre-allocated to maximum capacity.
-        min_entropy_slots: Vec<usize>,
+        allocator: Bump,
     }
 
     impl<const N: usize> WorldInnerConst<N> {
@@ -659,7 +657,7 @@ mod worldinnerconst {
                 slots_modified: false,
                 slot_module_weights,
 
-                min_entropy_slots: Vec::with_capacity(slot_count),
+                allocator: allocator(),
             }
         }
 
@@ -673,6 +671,8 @@ mod worldinnerconst {
                 .clone_from(&other.slot_module_weights);
 
             self.module_count = other.module_count;
+
+            // Note: allocator omitted on purpose.
         }
 
         pub fn dims(&self) -> [u16; 3] {
@@ -761,8 +761,10 @@ mod worldinnerconst {
         pub fn observe(&mut self, rng: &mut Rng) -> (bool, WorldStatus) {
             assert!(!self.slots_modified);
 
+            self.allocator.reset();
+
             let mut min_entropy = f32::INFINITY;
-            self.min_entropy_slots.clear();
+            let mut min_entropy_slots = Vec::with_capacity_in(self.slots.len(), &self.allocator);
 
             for (i, slot) in self.slots.iter().enumerate() {
                 // We can collapse anything with slot_len >= 2. If slot_len == 1,
@@ -800,24 +802,28 @@ mod worldinnerconst {
                 match entropy.partial_cmp(&min_entropy) {
                     Some(Ordering::Less) => {
                         min_entropy = entropy;
-                        self.min_entropy_slots.clear();
-                        self.min_entropy_slots.push(i);
+                        min_entropy_slots.clear();
+                        min_entropy_slots.push(i);
                     }
                     Some(Ordering::Equal) => {
-                        self.min_entropy_slots.push(i);
+                        min_entropy_slots.push(i);
                     }
                     Some(Ordering::Greater) => (),
                     None => (),
                 }
             }
 
-            if self.min_entropy_slots.is_empty() {
+            if min_entropy_slots.is_empty() {
                 (false, WorldStatus::Deterministic)
             } else {
                 let rand64 = &mut rng.0;
 
-                let min_entropy_slot_index = choose_slot(rand64, &self.min_entropy_slots);
+                let min_entropy_slot_index = choose_slot(rand64, &min_entropy_slots);
                 let min_entropy_slot = &mut self.slots[min_entropy_slot_index];
+
+                // Drop here, so that we don't hold a shared reference to the
+                // allocator when we enter propagate_constraints.
+                drop(min_entropy_slots);
 
                 // Pick a random module to materialize and remove other
                 // possibilities from the slot.
@@ -868,6 +874,8 @@ mod worldinnerconst {
         }
 
         pub fn canonicalize(&mut self) -> (bool, WorldStatus) {
+            self.allocator.reset();
+
             let mut world_changed = false;
 
             for i in 0..self.slots.len() {
@@ -888,10 +896,15 @@ mod worldinnerconst {
         fn propagate_constraints(&mut self, slot_index: usize) -> (bool, bool) {
             let [dim_x, dim_y, dim_z] = self.dims;
 
-            let mut visited = HashSet::with_hasher(FxBuildHasher::default());
+            let mut visited = HashSet::with_capacity_and_hasher_in(
+                64,
+                FxBuildHasher::default(),
+                hashbrown::BumpWrapper(&self.allocator),
+            );
             visited.insert(slot_index);
 
-            let mut stack = vec![StackEntry {
+            let mut stack = Vec::with_capacity_in(100, &self.allocator);
+            stack.push(StackEntry {
                 // Do not start in the init state here, b/c we assume the change
                 // already happened and we only propagate it.
                 search_state: SearchState::SearchLeft,
@@ -900,7 +913,7 @@ mod worldinnerconst {
                 slot_index,
                 // Invalid, but won't be looked at, because we skip the init state
                 slot_index_prev: slot_index,
-            }];
+            });
 
             let mut changed = false;
             let mut contradiction = false;
@@ -1095,6 +1108,28 @@ mod worldinnerconst {
 
             (changed, contradiction)
         }
+    }
+
+    impl<const N: usize> Clone for WorldInnerConst<N> {
+        fn clone(&self) -> Self {
+            Self {
+                dims: self.dims,
+                adjacency_rules: self.adjacency_rules.clone(),
+                features: self.features,
+
+                module_count: self.module_count,
+
+                slots: self.slots.clone(),
+                slots_modified: self.slots_modified,
+                slot_module_weights: self.slot_module_weights.clone(),
+
+                allocator: allocator(),
+            }
+        }
+    }
+
+    fn allocator() -> Bump {
+        Bump::with_capacity(10 * (1 << 20))
     }
 
     fn choose_slot(rng: &mut Rand64, slots: &[usize]) -> usize {
