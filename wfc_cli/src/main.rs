@@ -104,7 +104,15 @@ fn main() {
             }
         };
 
-        let mut world = World::new(dims, import_result.adjacencies, Features::empty()).unwrap();
+        let mut world = World::new(
+            dims,
+            import_result.adjacencies,
+            Features::empty(),
+            true,
+            1.0,
+            false,
+        )
+        .unwrap();
 
         let buf_reader = BufReader::new(world_state_file);
         if let Err(err) =
@@ -134,7 +142,15 @@ fn main() {
 
         world
     } else {
-        World::new(dims, import_result.adjacencies, Features::empty()).unwrap()
+        World::new(
+            dims,
+            import_result.adjacencies,
+            Features::empty(),
+            true,
+            1.0,
+            false,
+        )
+        .unwrap()
     };
 
     let mut world = initial_world.clone();

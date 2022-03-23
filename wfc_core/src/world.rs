@@ -63,8 +63,13 @@ impl Features {
     /// allocate memory for weights if enabled.
     pub const WEIGHTED_OBSERVATION: Self = Self(0x02);
 
+    /// Slots can be masked. Masked slots are ignored when choosing a slot to
+    /// observe and are never propagated into, and thus never propagated from.
+    pub const MASKED_SLOTS: Self = Self(0x04);
+
     pub const ALL_WEIGHTED: Self = Self(Self::WEIGHTED_ENTROPY.0 | Self::WEIGHTED_OBSERVATION.0);
-    pub const ALL: Self = Self::ALL_WEIGHTED;
+    pub const ALL: Self =
+        Self(Self::WEIGHTED_ENTROPY.0 | Self::WEIGHTED_OBSERVATION.0 | Self::MASKED_SLOTS.0);
 
     pub const fn bits(&self) -> u32 {
         self.0
@@ -88,6 +93,10 @@ impl Features {
 
     pub fn has_weighted_observation(&self) -> bool {
         self.0 & Self::WEIGHTED_OBSERVATION.0 > 0
+    }
+
+    pub fn has_masked_slots(&self) -> bool {
+        self.0 & Self::MASKED_SLOTS.0 > 0
     }
 }
 
@@ -238,6 +247,9 @@ impl World {
         dims: [u16; 3],
         adjacency_rules: Vec<AdjacencyRule>,
         features: Features,
+        slot_init_value: bool,
+        slot_module_weight_init_value: f32,
+        slot_mask_init_value: bool,
     ) -> Result<Self, WorldNewError> {
         if dims[0] == 0 || dims[1] == 0 || dims[2] == 0 {
             return Err(WorldNewError::WorldDimensionsZero);
@@ -280,11 +292,46 @@ impl World {
             .ok_or(WorldNewError::ModuleCountTooHigh)?;
 
         let inner = match block_count {
-            1 => WorldInner::Size1(WorldInnerConst::new(dims, adjacency_rules, features)),
-            2 => WorldInner::Size2(WorldInnerConst::new(dims, adjacency_rules, features)),
-            4 => WorldInner::Size4(WorldInnerConst::new(dims, adjacency_rules, features)),
-            8 => WorldInner::Size8(WorldInnerConst::new(dims, adjacency_rules, features)),
-            16 => WorldInner::Size16(WorldInnerConst::new(dims, adjacency_rules, features)),
+            1 => WorldInner::Size1(WorldInnerConst::new(
+                dims,
+                adjacency_rules,
+                features,
+                slot_init_value,
+                slot_module_weight_init_value,
+                slot_mask_init_value,
+            )),
+            2 => WorldInner::Size2(WorldInnerConst::new(
+                dims,
+                adjacency_rules,
+                features,
+                slot_init_value,
+                slot_module_weight_init_value,
+                slot_mask_init_value,
+            )),
+            4 => WorldInner::Size4(WorldInnerConst::new(
+                dims,
+                adjacency_rules,
+                features,
+                slot_init_value,
+                slot_module_weight_init_value,
+                slot_mask_init_value,
+            )),
+            8 => WorldInner::Size8(WorldInnerConst::new(
+                dims,
+                adjacency_rules,
+                features,
+                slot_init_value,
+                slot_module_weight_init_value,
+                slot_mask_init_value,
+            )),
+            16 => WorldInner::Size16(WorldInnerConst::new(
+                dims,
+                adjacency_rules,
+                features,
+                slot_init_value,
+                slot_module_weight_init_value,
+                slot_mask_init_value,
+            )),
             _ => unreachable!(),
         };
 
@@ -357,6 +404,10 @@ impl World {
     /// positive ([`f32::is_sign_positive`]) number.
     pub fn set_slot_module_weights(&mut self, pos: [u16; 3], weights: &[f32]) {
         self.inner.set_slot_module_weights(pos, weights);
+    }
+
+    pub fn set_slot_mask(&mut self, pos: [u16; 3], mask: bool) {
+        self.inner.set_slot_mask(pos, mask);
     }
 
     pub fn canonicalize(&mut self) -> (bool, WorldStatus) {
@@ -550,6 +601,16 @@ mod worldinner {
             }
         }
 
+        pub fn set_slot_mask(&mut self, pos: [u16; 3], mask: bool) {
+            match self {
+                Self::Size1(world) => world.set_slot_mask(pos, mask),
+                Self::Size2(world) => world.set_slot_mask(pos, mask),
+                Self::Size4(world) => world.set_slot_mask(pos, mask),
+                Self::Size8(world) => world.set_slot_mask(pos, mask),
+                Self::Size16(world) => world.set_slot_mask(pos, mask),
+            }
+        }
+
         pub fn canonicalize(&mut self) -> (bool, WorldStatus) {
             match self {
                 Self::Size1(world) => world.canonicalize(),
@@ -596,6 +657,8 @@ mod worldinnerconst {
         slots: Vec<BitVec<N>>,
         slots_modified: bool,
         slot_module_weights: Option<Vec<f32>>,
+        // TODO(yan): @Speed @Memory Pack booleans into bits.
+        slot_masks: Option<Vec<bool>>,
 
         /// Working memory for picking the nondeterministic slot with smallest
         /// entropy. Pre-allocated to maximum capacity.
@@ -607,6 +670,9 @@ mod worldinnerconst {
             dims: [u16; 3],
             adjacency_rules: Vec<AdjacencyRule>,
             features: Features,
+            slot_init_value: bool,
+            slot_module_weight_init_value: f32,
+            slot_mask_init_value: bool,
         ) -> Self {
             assert!(dims[0] > 0);
             assert!(dims[1] > 0);
@@ -618,19 +684,22 @@ mod worldinnerconst {
 
             let mut slot = BitVec::zeros();
 
-            for adjacency in &adjacency_rules {
-                if adjacency.module_low > module_max {
-                    module_max = adjacency.module_low;
-                }
-                if adjacency.module_high > module_max {
-                    module_max = adjacency.module_high;
-                }
+            // slot_init_value determines, if we include all modules, or none.
+            if slot_init_value {
+                for adjacency in &adjacency_rules {
+                    if adjacency.module_low > module_max {
+                        module_max = adjacency.module_low;
+                    }
+                    if adjacency.module_high > module_max {
+                        module_max = adjacency.module_high;
+                    }
 
-                if slot.add(adjacency.module_low) {
-                    module_count += 1;
-                }
-                if slot.add(adjacency.module_high) {
-                    module_count += 1;
+                    if slot.add(adjacency.module_low) {
+                        module_count += 1;
+                    }
+                    if slot.add(adjacency.module_high) {
+                        module_count += 1;
+                    }
                 }
             }
 
@@ -643,7 +712,16 @@ mod worldinnerconst {
             let slots = vec![slot; slot_count];
 
             let slot_module_weights = if features.contains_any_weighted() {
-                Some(vec![1.0; slot_count * usize::from(module_count)])
+                Some(vec![
+                    slot_module_weight_init_value;
+                    slot_count * usize::from(module_count)
+                ])
+            } else {
+                None
+            };
+
+            let slot_masks = if features.has_masked_slots() {
+                Some(vec![slot_mask_init_value; slot_count])
             } else {
                 None
             };
@@ -656,6 +734,7 @@ mod worldinnerconst {
                 module_count,
 
                 slots,
+                slot_masks,
                 slots_modified: false,
                 slot_module_weights,
 
@@ -758,6 +837,13 @@ mod worldinnerconst {
             }
         }
 
+        pub fn set_slot_mask(&mut self, pos: [u16; 3], mask: bool) {
+            if let Some(slot_masks) = &mut self.slot_masks {
+                let index = position_to_index(self.dims, pos);
+                slot_masks[index] = mask;
+            }
+        }
+
         pub fn observe(&mut self, rng: &mut Rng) -> (bool, WorldStatus) {
             assert!(!self.slots_modified);
 
@@ -765,6 +851,13 @@ mod worldinnerconst {
             self.min_entropy_slots.clear();
 
             for (i, slot) in self.slots.iter().enumerate() {
+                // Ignore masked slots when building a list of slots to observe.
+                if let Some(slot_masks) = &self.slot_masks {
+                    if slot_masks[i] {
+                        continue;
+                    }
+                }
+
                 // We can collapse anything with slot_len >= 2. If slot_len == 1,
                 // the slot is already collapsed. If slot_len == 0, we hit a
                 // contradiction and can bail out early.
@@ -977,7 +1070,13 @@ mod worldinnerconst {
 
                         s.search_state = SearchState::SearchRight;
 
-                        if pos != pos_next {
+                        let masked = if let Some(slot_masks) = &self.slot_masks {
+                            slot_masks[slot_index]
+                        } else {
+                            false
+                        };
+
+                        if pos != pos_next && !masked {
                             let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
@@ -996,7 +1095,13 @@ mod worldinnerconst {
 
                         s.search_state = SearchState::SearchFront;
 
-                        if pos != pos_next {
+                        let masked = if let Some(slot_masks) = &self.slot_masks {
+                            slot_masks[slot_index]
+                        } else {
+                            false
+                        };
+
+                        if pos != pos_next && !masked {
                             let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
@@ -1015,7 +1120,13 @@ mod worldinnerconst {
 
                         s.search_state = SearchState::SearchBack;
 
-                        if pos != pos_next {
+                        let masked = if let Some(slot_masks) = &self.slot_masks {
+                            slot_masks[slot_index]
+                        } else {
+                            false
+                        };
+
+                        if pos != pos_next && !masked {
                             let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
@@ -1034,7 +1145,13 @@ mod worldinnerconst {
 
                         s.search_state = SearchState::SearchDown;
 
-                        if pos != pos_next {
+                        let masked = if let Some(slot_masks) = &self.slot_masks {
+                            slot_masks[slot_index]
+                        } else {
+                            false
+                        };
+
+                        if pos != pos_next && !masked {
                             let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
@@ -1053,7 +1170,13 @@ mod worldinnerconst {
 
                         s.search_state = SearchState::SearchUp;
 
-                        if pos != pos_next {
+                        let masked = if let Some(slot_masks) = &self.slot_masks {
+                            slot_masks[slot_index]
+                        } else {
+                            false
+                        };
+
+                        if pos != pos_next && !masked {
                             let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
@@ -1072,7 +1195,13 @@ mod worldinnerconst {
 
                         s.search_state = SearchState::Done;
 
-                        if pos != pos_next {
+                        let masked = if let Some(slot_masks) = &self.slot_masks {
+                            slot_masks[slot_index]
+                        } else {
+                            false
+                        };
+
+                        if pos != pos_next && !masked {
                             let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
