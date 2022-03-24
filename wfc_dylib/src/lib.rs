@@ -43,6 +43,12 @@ pub extern "C" fn wfc_feature_weighted_observation() -> u32 {
     Features::WEIGHTED_OBSERVATION.bits()
 }
 
+/// Some slots can be masked-out (disabled). Will allocate memory for the mask.
+#[no_mangle]
+pub extern "C" fn wfc_feature_masked_slots() -> u32 {
+    Features::MASKED_SLOTS.bits()
+}
+
 #[repr(u32)]
 pub enum WfcWorldStateInitResult {
     Ok = 0,

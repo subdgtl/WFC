@@ -93,6 +93,9 @@ uint32_t wfc_feature_weighted_entropy();
 /// memory for weights if enabled.
 uint32_t wfc_feature_weighted_observation();
 
+/// Some slots can be masked-out (disabled). Will allocate memory for the mask.
+uint32_t wfc_feature_masked_slots();
+
 /// Creates an instance of Wave Function Collapse world state and initializes it
 /// with adjacency rules. The world gets initialized with every module possible
 /// in every slot.
