@@ -143,8 +143,9 @@ WfcWorldStateInitResult wfc_world_state_init(WfcWorldStateHandle *wfc_world_stat
 /// [`Features::WEIGHTED_ENTROPY`] is passed.
 ///
 /// `slot_mask_init_value` is a 32-bit boolean, either 0 or 1. All slot masks
-/// are initialized to this value. The value is ignored if
-/// [`Features::MASKED_SLOTS`] is not passed.
+/// are initialized to this value. 1 means the slot is enabled, 0 means the slot
+/// is ignored. The value is ignored if [`Features::MASKED_SLOTS`] is not
+/// passed.
 WfcWorldStateInitResult wfc_world_state_init_ex(WfcWorldStateHandle *wfc_world_state_handle_ptr,
                                                 const AdjacencyRule *adjacency_rules_ptr,
                                                 uintptr_t adjacency_rules_len,
@@ -271,7 +272,8 @@ WfcWorldStateSlotModuleWeightSetResult wfc_world_state_slot_module_weight_set(Wf
                                                                               float weight);
 
 /// Stores a mask for one Wave Function Collapse slot into the provided
-/// handle. Mask is a 32-bit boolean value, either 0 or 1.
+/// handle. Mask is a 32-bit boolean value, either 0 or 1. 1 means the slot is
+/// enabled, 0 means the slot is ignored.
 ///
 /// # Safety
 ///
