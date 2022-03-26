@@ -945,14 +945,22 @@ mod worldinnerconst {
         pub fn world_status(&self) -> WorldStatus {
             let mut lt1 = false;
             let mut gt1 = false;
-            for slot in &self.slots {
-                match slot.len().cmp(&1) {
-                    Ordering::Less => {
-                        lt1 = true;
-                    }
-                    Ordering::Equal => (),
-                    Ordering::Greater => {
-                        gt1 = true;
+            for (i, slot) in self.slots.iter().enumerate() {
+                let masked = if let Some(slot_masks) = &self.slot_masks {
+                    !slot_masks[i]
+                } else {
+                    false
+                };
+
+                if !masked {
+                    match slot.len().cmp(&1) {
+                        Ordering::Less => {
+                            lt1 = true;
+                        }
+                        Ordering::Equal => (),
+                        Ordering::Greater => {
+                            gt1 = true;
+                        }
                     }
                 }
             }
