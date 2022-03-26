@@ -132,8 +132,9 @@ pub unsafe extern "C" fn wfc_world_state_init(
 /// [`Features::WEIGHTED_ENTROPY`] is passed.
 ///
 /// `slot_mask_init_value` is a 32-bit boolean, either 0 or 1. All slot masks
-/// are initialized to this value. The value is ignored if
-/// [`Features::MASKED_SLOTS`] is not passed.
+/// are initialized to this value. 1 means the slot is enabled, 0 means the slot
+/// is ignored. The value is ignored if [`Features::MASKED_SLOTS`] is not
+/// passed.
 #[no_mangle]
 pub unsafe extern "C" fn wfc_world_state_init_ex(
     wfc_world_state_handle_ptr: *mut WfcWorldStateHandle,
@@ -459,7 +460,8 @@ pub enum WfcWorldStateSlotMaskSetResult {
 }
 
 /// Stores a mask for one Wave Function Collapse slot into the provided
-/// handle. Mask is a 32-bit boolean value, either 0 or 1.
+/// handle. Mask is a 32-bit boolean value, either 0 or 1. 1 means the slot is
+/// enabled, 0 means the slot is ignored.
 ///
 /// # Safety
 ///

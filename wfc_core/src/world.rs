@@ -857,7 +857,7 @@ mod worldinnerconst {
             for (i, slot) in self.slots.iter().enumerate() {
                 // Ignore masked slots when building a list of slots to observe.
                 if let Some(slot_masks) = &self.slot_masks {
-                    if slot_masks[i] {
+                    if !slot_masks[i] {
                         continue;
                     }
                 }
@@ -972,9 +972,15 @@ mod worldinnerconst {
                 // continue until we canonicalize the whole world. This is
                 // because we have to set slots_modified = false.
 
-                let (changed, _) = self.propagate_constraints(i);
-
-                world_changed |= changed;
+                if let Some(slot_masks) = &self.slot_masks {
+                    if slot_masks[i] {
+                        let (changed, _) = self.propagate_constraints(i);
+                        world_changed |= changed;
+                    }
+                } else {
+                    let (changed, _) = self.propagate_constraints(i);
+                    world_changed |= changed;
+                }
             }
 
             self.slots_modified = false;
@@ -1075,7 +1081,7 @@ mod worldinnerconst {
                         s.search_state = SearchState::SearchRight;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            slot_masks[slot_index]
+                            !slot_masks[slot_index]
                         } else {
                             false
                         };
@@ -1100,7 +1106,7 @@ mod worldinnerconst {
                         s.search_state = SearchState::SearchFront;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            slot_masks[slot_index]
+                            !slot_masks[slot_index]
                         } else {
                             false
                         };
@@ -1125,7 +1131,7 @@ mod worldinnerconst {
                         s.search_state = SearchState::SearchBack;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            slot_masks[slot_index]
+                            !slot_masks[slot_index]
                         } else {
                             false
                         };
@@ -1150,7 +1156,7 @@ mod worldinnerconst {
                         s.search_state = SearchState::SearchDown;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            slot_masks[slot_index]
+                            !slot_masks[slot_index]
                         } else {
                             false
                         };
@@ -1175,7 +1181,7 @@ mod worldinnerconst {
                         s.search_state = SearchState::SearchUp;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            slot_masks[slot_index]
+                            !slot_masks[slot_index]
                         } else {
                             false
                         };
@@ -1200,7 +1206,7 @@ mod worldinnerconst {
                         s.search_state = SearchState::Done;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            slot_masks[slot_index]
+                            !slot_masks[slot_index]
                         } else {
                             false
                         };
