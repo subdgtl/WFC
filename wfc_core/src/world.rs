@@ -684,22 +684,19 @@ mod worldinnerconst {
 
             let mut slot = BitVec::zeros();
 
-            // slot_init_value determines, if we include all modules, or none.
-            if slot_init_value {
-                for adjacency in &adjacency_rules {
-                    if adjacency.module_low > module_max {
-                        module_max = adjacency.module_low;
-                    }
-                    if adjacency.module_high > module_max {
-                        module_max = adjacency.module_high;
-                    }
+            for adjacency in &adjacency_rules {
+                if adjacency.module_low > module_max {
+                    module_max = adjacency.module_low;
+                }
+                if adjacency.module_high > module_max {
+                    module_max = adjacency.module_high;
+                }
 
-                    if slot.add(adjacency.module_low) {
-                        module_count += 1;
-                    }
-                    if slot.add(adjacency.module_high) {
-                        module_count += 1;
-                    }
+                if slot.add(adjacency.module_low) {
+                    module_count += 1;
+                }
+                if slot.add(adjacency.module_high) {
+                    module_count += 1;
                 }
             }
 
@@ -709,7 +706,14 @@ mod worldinnerconst {
             assert!(module_max + 1 == module_count);
 
             let slot_count = usize::from(dims[0]) * usize::from(dims[1]) * usize::from(dims[2]);
-            let slots = vec![slot; slot_count];
+            let slots = vec![
+                if slot_init_value {
+                    slot
+                } else {
+                    BitVec::zeros()
+                };
+                slot_count
+            ];
 
             let slot_module_weights = if features.contains_any_weighted() {
                 Some(vec![
