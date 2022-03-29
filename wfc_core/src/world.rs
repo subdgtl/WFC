@@ -845,6 +845,8 @@ mod worldinnerconst {
             if let Some(slot_masks) = &mut self.slot_masks {
                 let index = position_to_index(self.dims, pos);
                 slot_masks[index] = mask;
+
+                self.slots_modified = true;
             }
         }
 
@@ -999,6 +1001,8 @@ mod worldinnerconst {
         fn propagate_constraints(&mut self, slot_index: usize) -> (bool, bool) {
             let [dim_x, dim_y, dim_z] = self.dims;
 
+            assert!(self.slot_masks.is_none() || self.slot_masks.as_ref().unwrap()[slot_index]);
+
             let mut visited = HashSet::with_hasher(FxBuildHasher::default());
             visited.insert(slot_index);
 
@@ -1020,6 +1024,11 @@ mod worldinnerconst {
 
                 match s.search_state {
                     SearchState::Init => {
+                        assert!(
+                            self.slot_masks.is_none()
+                                || self.slot_masks.as_ref().unwrap()[s.slot_index]
+                        );
+
                         visited.insert(s.slot_index);
 
                         let slot = &self.slots[s.slot_index];
@@ -1085,17 +1094,17 @@ mod worldinnerconst {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(self.dims, slot_index);
                         let pos_next = [prev_position_saturating(pos[0], dim_x), pos[1], pos[2]];
+                        let slot_index_next = position_to_index(self.dims, pos_next);
 
                         s.search_state = SearchState::SearchRight;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            !slot_masks[slot_index]
+                            !slot_masks[slot_index_next]
                         } else {
                             false
                         };
 
                         if pos != pos_next && !masked {
-                            let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
@@ -1110,17 +1119,17 @@ mod worldinnerconst {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(self.dims, slot_index);
                         let pos_next = [next_position_saturating(pos[0], dim_x), pos[1], pos[2]];
+                        let slot_index_next = position_to_index(self.dims, pos_next);
 
                         s.search_state = SearchState::SearchFront;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            !slot_masks[slot_index]
+                            !slot_masks[slot_index_next]
                         } else {
                             false
                         };
 
                         if pos != pos_next && !masked {
-                            let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
@@ -1135,17 +1144,17 @@ mod worldinnerconst {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(self.dims, slot_index);
                         let pos_next = [pos[0], prev_position_saturating(pos[1], dim_y), pos[2]];
+                        let slot_index_next = position_to_index(self.dims, pos_next);
 
                         s.search_state = SearchState::SearchBack;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            !slot_masks[slot_index]
+                            !slot_masks[slot_index_next]
                         } else {
                             false
                         };
 
                         if pos != pos_next && !masked {
-                            let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
@@ -1160,17 +1169,17 @@ mod worldinnerconst {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(self.dims, slot_index);
                         let pos_next = [pos[0], next_position_saturating(pos[1], dim_y), pos[2]];
+                        let slot_index_next = position_to_index(self.dims, pos_next);
 
                         s.search_state = SearchState::SearchDown;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            !slot_masks[slot_index]
+                            !slot_masks[slot_index_next]
                         } else {
                             false
                         };
 
                         if pos != pos_next && !masked {
-                            let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
@@ -1185,17 +1194,17 @@ mod worldinnerconst {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(self.dims, slot_index);
                         let pos_next = [pos[0], pos[1], prev_position_saturating(pos[2], dim_z)];
+                        let slot_index_next = position_to_index(self.dims, pos_next);
 
                         s.search_state = SearchState::SearchUp;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            !slot_masks[slot_index]
+                            !slot_masks[slot_index_next]
                         } else {
                             false
                         };
 
                         if pos != pos_next && !masked {
-                            let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,
@@ -1210,17 +1219,17 @@ mod worldinnerconst {
                         let slot_index = s.slot_index;
                         let pos = index_to_position(self.dims, slot_index);
                         let pos_next = [pos[0], pos[1], next_position_saturating(pos[2], dim_z)];
+                        let slot_index_next = position_to_index(self.dims, pos_next);
 
                         s.search_state = SearchState::Done;
 
                         let masked = if let Some(slot_masks) = &self.slot_masks {
-                            !slot_masks[slot_index]
+                            !slot_masks[slot_index_next]
                         } else {
                             false
                         };
 
                         if pos != pos_next && !masked {
-                            let slot_index_next = position_to_index(self.dims, pos_next);
                             if !visited.contains(&slot_index_next) {
                                 stack.push(StackEntry {
                                     search_state: SearchState::Init,

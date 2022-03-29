@@ -164,6 +164,7 @@ fn main() {
 
         let status = loop {
             let (_, status) = world.observe(&mut rng);
+            observations += 1;
 
             match status {
                 WorldStatus::Nondeterministic => {
@@ -191,8 +192,6 @@ fn main() {
                     break WorldStatus::Contradiction;
                 }
             }
-
-            observations += 1;
         };
 
         if status == WorldStatus::Deterministic {
