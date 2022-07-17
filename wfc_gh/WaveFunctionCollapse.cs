@@ -277,7 +277,7 @@ namespace wfc_gh {
             // -- Max attempts --
             //
 
-            int maxAttempts = 0;
+            int maxAttempts = 100;
             DA.GetData(IN_PARAM_MAX_ATTEMPTS, ref maxAttempts);
 
             //
@@ -442,7 +442,18 @@ namespace wfc_gh {
                         return;
                     }
 
-                    if (status == WorldStatus.Deterministic || (status == WorldStatus.Nondeterministic && attempts == maxAttempts)) {
+                    if (status == WorldStatus.Contradiction) {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                                          "World state is contradictory");
+
+                        break;
+                    }
+
+                    if (status == WorldStatus.Deterministic) {
+                        break;
+                    }
+
+                    if (status == WorldStatus.Nondeterministic && attempts >= maxAttempts) {
                         break;
                     }
 
@@ -599,6 +610,11 @@ namespace wfc_gh {
         ErrWeightNotNormalPositive = 3,
     }
 
+    internal enum WfcWorldStateSlotMaskSetResult : uint {
+        Ok = 0,
+        ErrSlotOutOfBounds = 1,
+    }
+
     internal enum WfcWorldStateCanonicalizeResult : uint {
         OkDeterministic = 0,
         OkNondeterministic = 1,
@@ -678,6 +694,14 @@ namespace wfc_gh {
                                                                                                                     ushort pos_z,
                                                                                                                     ushort module,
                                                                                                                     float weight);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcWorldStateSlotMaskSetResult wfc_world_state_slot_mask_set(IntPtr wfc_world_state_handle,
+                                                                                                   ushort pos_x,
+                                                                                                   ushort pos_y,
+                                                                                                   ushort pos_z,
+                                                                                                   ushort module,
+                                                                                                   uint mask);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_rng_state_init(IntPtr* wfc_rng_state_handle_ptr,
