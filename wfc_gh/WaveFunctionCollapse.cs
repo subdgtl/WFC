@@ -622,6 +622,9 @@ namespace wfc_gh {
         internal static extern uint wfc_feature_weighted_observation();
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static extern uint wfc_feature_masked_slots();
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern WfcWorldStateInitResult wfc_world_state_init(IntPtr* wfc_world_state_handle_ptr,
                                                                                    AdjacencyRule* adjacency_rules_ptr,
                                                                                    UIntPtr adjacency_rules_len,
@@ -629,6 +632,18 @@ namespace wfc_gh {
                                                                                    ushort world_y,
                                                                                    ushort world_z,
                                                                                    uint features);
+
+        [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
+        internal static unsafe extern WfcWorldStateInitResult wfc_world_state_init_ex(IntPtr* wfc_world_state_handle_ptr,
+                                                                                      AdjacencyRule* adjacency_rules_ptr,
+                                                                                      UIntPtr adjacency_rules_len,
+                                                                                      ushort world_x,
+                                                                                      ushort world_y,
+                                                                                      ushort world_z,
+                                                                                      uint features,
+                                                                                      uint slot_init_value,
+                                                                                      float slot_module_weight_init_value,
+                                                                                      uint slot_mask_init_value);
 
         [DllImport("wfc", CallingConvention = CallingConvention.StdCall)]
         internal static unsafe extern void wfc_world_state_init_from(IntPtr* wfc_world_state_handle_ptr,
