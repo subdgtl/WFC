@@ -43,6 +43,12 @@ pub extern "C" fn wfc_feature_weighted_observation() -> u32 {
     Features::WEIGHTED_OBSERVATION.bits()
 }
 
+/// Some slots can be masked-out (disabled). Will allocate memory for the mask.
+#[no_mangle]
+pub extern "C" fn wfc_feature_masked_slots() -> u32 {
+    Features::MASKED_SLOTS.bits()
+}
+
 #[repr(u32)]
 pub enum WfcWorldStateInitResult {
     Ok = 0,
@@ -98,6 +104,50 @@ pub unsafe extern "C" fn wfc_world_state_init(
     world_z: u16,
     features: u32,
 ) -> WfcWorldStateInitResult {
+    wfc_world_state_init_ex(
+        wfc_world_state_handle_ptr,
+        adjacency_rules_ptr,
+        adjacency_rules_len,
+        world_x,
+        world_y,
+        world_z,
+        features,
+        1,
+        1.0,
+        0,
+    )
+}
+
+/// This is exactly like [`wfc_world_state_init`], but allows for setting
+/// initial values for slots, slot module weights and slot masks.
+///
+/// `slot_init_value` is a 32-bit boolean, either 0 or 1. If 0, the slot will
+/// start with all modules unset. If 1, all supported modules will be set. The
+/// value can be further customized with [`wfc_world_state_slot_module_set`].
+///
+/// `slot_module_weight_init_value` is a 32-bit floating point number all slot
+/// module weights will be initialized to. Weights can be further customized
+/// with [`wfc_world_state_slot_module_weight_set`]. The value is ignored
+/// neither [`Features::WEIGHTED_OBSERVATION`] nor
+/// [`Features::WEIGHTED_ENTROPY`] is passed.
+///
+/// `slot_mask_init_value` is a 32-bit boolean, either 0 or 1. All slot masks
+/// are initialized to this value. 1 means the slot is enabled, 0 means the slot
+/// is ignored. The value is ignored if [`Features::MASKED_SLOTS`] is not
+/// passed.
+#[no_mangle]
+pub unsafe extern "C" fn wfc_world_state_init_ex(
+    wfc_world_state_handle_ptr: *mut WfcWorldStateHandle,
+    adjacency_rules_ptr: *const AdjacencyRule,
+    adjacency_rules_len: usize,
+    world_x: u16,
+    world_y: u16,
+    world_z: u16,
+    features: u32,
+    slot_init_value: u32,
+    slot_module_weight_init_value: f32,
+    slot_mask_init_value: u32,
+) -> WfcWorldStateInitResult {
     assert!(!wfc_world_state_handle_ptr.is_null());
     let adjacency_rules = {
         assert!(!adjacency_rules_ptr.is_null());
@@ -119,7 +169,14 @@ pub unsafe extern "C" fn wfc_world_state_init(
     let rules = Vec::from(adjacency_rules);
 
     let world_features = Features::from_bits_truncate(features);
-    let world = World::new([world_x, world_y, world_z], rules, world_features);
+    let world = World::new(
+        [world_x, world_y, world_z],
+        rules,
+        world_features,
+        slot_init_value > 0,
+        slot_module_weight_init_value,
+        slot_mask_init_value > 0,
+    );
 
     match world {
         Ok(world) => {
@@ -394,6 +451,47 @@ pub unsafe extern "C" fn wfc_world_state_slot_module_weight_set(
     world.set_slot_module_weight([pos_x, pos_y, pos_z], module, weight);
 
     WfcWorldStateSlotModuleWeightSetResult::Ok
+}
+
+#[repr(u32)]
+pub enum WfcWorldStateSlotMaskSetResult {
+    Ok = 0,
+    ErrSlotOutOfBounds = 1,
+}
+
+/// Stores a mask for one Wave Function Collapse slot into the provided
+/// handle. Mask is a 32-bit boolean value, either 0 or 1. 1 means the slot is
+/// enabled, 0 means the slot is ignored.
+///
+/// # Safety
+///
+/// Behavior is undefined if any of the following conditions are violated:
+///
+/// - `wfc_world_state_handle` must be a valid handle created via
+///   [`wfc_world_state_init`] that returned [`WfcWorldStateInitResult::Ok`] or
+///   [`wfc_world_state_init_from`] and not yet freed via
+///   [`wfc_world_state_free`].
+#[no_mangle]
+pub unsafe extern "C" fn wfc_world_state_slot_mask_set(
+    wfc_world_state_handle: WfcWorldStateHandle,
+    pos_x: u16,
+    pos_y: u16,
+    pos_z: u16,
+    mask: u32,
+) -> WfcWorldStateSlotMaskSetResult {
+    let world = {
+        assert!(!wfc_world_state_handle.0.is_null());
+        &mut *wfc_world_state_handle.0
+    };
+
+    let [dim_x, dim_y, dim_z] = world.dims();
+    if pos_x >= dim_x || pos_y >= dim_y || pos_z >= dim_z {
+        return WfcWorldStateSlotMaskSetResult::ErrSlotOutOfBounds;
+    }
+
+    world.set_slot_mask([pos_x, pos_y, pos_z], mask > 0);
+
+    WfcWorldStateSlotMaskSetResult::Ok
 }
 
 /// Creates an instance of pseudo-random number generator and initializes it
