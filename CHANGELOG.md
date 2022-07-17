@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unrealeased
 
 New features:
 
@@ -8,7 +8,22 @@ New features:
 
 Internal changes:
 
+(None)
+
+## v0.4.1
+
+New features:
+
+- The solver now supports masks. Masks are a parallel array, like weights. They tell
+  the solver to ignore masked-out slots from the solution. Masked-out slots will not
+  be observed, propagated-from, or propagated-into (similarly like the cuboid boundary
+  is not propagated into). See PR [#29](https://github.com/subdgtl/WFC/pull/29) for
+  more.
+
+Internal changes:
+
 - `Rng` now implements `Clone`.
+- C bindings are now generated automatically during build.
 
 ## v0.4.0
 
