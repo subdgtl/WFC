@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+New features:
+
+(None)
+
+Internal changes:
+
 - `Rng` now implements `Clone`.
+
+## v0.4.0
 
 New features:
 
