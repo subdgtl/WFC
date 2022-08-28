@@ -915,6 +915,15 @@ mod worldinnerconst {
             } else {
                 let rand64 = &mut rng.0;
 
+                // XXX: Sort
+                let dims = self.dims;
+                self.min_entropy_slots.sort_unstable_by(|l, r| {
+                    let [lx, ly, lz] = index_to_position(dims, *l);
+                    let [rx, ry, rz] = index_to_position(dims, *r);
+
+                    lx.cmp(&rx).then(ly.cmp(&ry).then(lz.cmp(&rz)))
+                });
+
                 let min_entropy_slot_index = choose_slot(rand64, &self.min_entropy_slots);
                 let min_entropy_slot = &mut self.slots[min_entropy_slot_index];
 
