@@ -144,6 +144,60 @@ pub fn index_to_position(dims: [u16; 3], index: usize) -> [u16; 3] {
     [x, y, z]
 }
 
+// TODO(yan): @Speed Optimize this to take fewer cycles.
+// http://www.graphics.stanford.edu/~seander/bithacks.html#InterleaveBMN
+pub fn morton_position_to_index(position: [u16; 3]) -> usize {
+    // XXX: usize -> u32
+    // XXX: Can keep up to 10 bits
+    let x = position[0] as u8;
+    let y = position[1] as u8;
+    let z = position[2] as u8;
+
+    let mut index: u32 = 0;
+
+    for i in 0..8 {
+        let mask = 1 << i;
+
+        let xbit = ((x & mask) as u32) >> i;
+        let ybit = ((y & mask) as u32) >> i;
+        let zbit = ((z & mask) as u32) >> i;
+
+        index |= xbit << (3 * i);
+        index |= ybit << (3 * i + 1);
+        index |= zbit << (3 * i + 2);
+    }
+
+    index as usize
+}
+
+pub fn morton_index_to_position(index: usize /* XXX: usize -> u32 */) -> [u16; 3] {
+    let index = index as u32;
+
+    let mut x: u16 = 0;
+    let mut y: u16 = 0;
+    let mut z: u16 = 0;
+
+    for i in 0..8 {
+        let xshift: u32 = 3 * i;
+        let yshift: u32 = 3 * i + 1;
+        let zshift: u32 = 3 * i + 2;
+
+        let xmask: u32 = 1 << xshift;
+        let ymask: u32 = 1 << yshift;
+        let zmask: u32 = 1 << zshift;
+
+        let xbit = ((index & xmask) >> xshift) as u16;
+        let ybit = ((index & ymask) >> yshift) as u16;
+        let zbit = ((index & zmask) >> zshift) as u16;
+
+        x |= xbit << i;
+        y |= ybit << i;
+        z |= zbit << i;
+    }
+
+    [x, y, z]
+}
+
 // Note: We could have used Rand32, but world position is up to 48 bits, so we
 // use 64 bit RNG.
 #[derive(Debug, Clone)]
@@ -775,17 +829,17 @@ mod worldinnerconst {
         }
 
         pub fn slot_module(&self, pos: [u16; 3], module: u16) -> bool {
-            let index = position_to_index(self.dims, pos);
+            let index = morton_position_to_index(pos);
             self.slots[index].contains(module)
         }
 
         pub fn slot_module_count(&self, pos: [u16; 3]) -> usize {
-            let index = position_to_index(self.dims, pos);
+            let index = morton_position_to_index(pos);
             self.slots[index].len()
         }
 
         pub fn set_slot_module(&mut self, pos: [u16; 3], module: u16, value: bool) {
-            let index = position_to_index(self.dims, pos);
+            let index = morton_position_to_index(pos);
             let slot = &mut self.slots[index];
 
             if value {
@@ -798,7 +852,7 @@ mod worldinnerconst {
         }
 
         pub fn set_slot_modules(&mut self, pos: [u16; 3], value: bool) {
-            let index = position_to_index(self.dims, pos);
+            let index = morton_position_to_index(pos);
             let slot = &mut self.slots[index];
 
             for module in 0..self.module_count {
@@ -816,6 +870,7 @@ mod worldinnerconst {
             assert!(module < self.module_count);
             assert!(weight.is_normal() && weight.is_sign_positive());
 
+            // XXX: Can we use morton for weights?
             if let Some(slot_module_weights) = &mut self.slot_module_weights {
                 let index = usize::from(module)
                     + usize::from(self.module_count) * position_to_index(self.dims, pos);
@@ -832,6 +887,7 @@ mod worldinnerconst {
                 assert!(weight.is_normal() && weight.is_sign_positive());
             }
 
+            // XXX: Can we use morton for weights?
             if let Some(slot_module_weights) = &mut self.slot_module_weights {
                 let index_base = module_count * position_to_index(self.dims, pos);
 
@@ -843,7 +899,7 @@ mod worldinnerconst {
 
         pub fn set_slot_mask(&mut self, pos: [u16; 3], mask: bool) {
             if let Some(slot_masks) = &mut self.slot_masks {
-                let index = position_to_index(self.dims, pos);
+                let index = morton_position_to_index(pos);
                 slot_masks[index] = mask;
 
                 self.slots_modified = true;
@@ -876,6 +932,7 @@ mod worldinnerconst {
                 }
 
                 let entropy = if self.features.has_weighted_entropy() {
+                    unreachable!("XXX");
                     let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
                     let mut sum_weights = 0.0;
                     let mut sum_weight_log_weights = 0.0;
@@ -915,12 +972,21 @@ mod worldinnerconst {
             } else {
                 let rand64 = &mut rng.0;
 
+                // XXX: Sort so we compare apples to apples when benchmarking.
+                self.min_entropy_slots.sort_unstable_by(|l, r| {
+                    let [lx, ly, lz] = morton_index_to_position(*l);
+                    let [rx, ry, rz] = morton_index_to_position(*r);
+
+                    lx.cmp(&rx).then(ly.cmp(&ry).then(lz.cmp(&rz)))
+                });
+
                 let min_entropy_slot_index = choose_slot(rand64, &self.min_entropy_slots);
                 let min_entropy_slot = &mut self.slots[min_entropy_slot_index];
 
                 // Pick a random module to materialize and remove other
                 // possibilities from the slot.
                 let chosen_module = if self.features.has_weighted_observation() {
+                    unreachable!("XXX");
                     let slot_module_weights = self.slot_module_weights.as_ref().unwrap();
                     let index_base = usize::from(self.module_count) * min_entropy_slot_index;
                     let weights = &slot_module_weights
@@ -1092,9 +1158,9 @@ mod worldinnerconst {
                     }
                     SearchState::SearchLeft => {
                         let slot_index = s.slot_index;
-                        let pos = index_to_position(self.dims, slot_index);
-                        let pos_next = [prev_position_saturating(pos[0], dim_x), pos[1], pos[2]];
-                        let slot_index_next = position_to_index(self.dims, pos_next);
+                        let pos = morton_index_to_position(slot_index);
+                        let pos_next = [dec_position(pos[0], dim_x), pos[1], pos[2]];
+                        let slot_index_next = morton_position_to_index(pos_next);
 
                         s.search_state = SearchState::SearchRight;
 
@@ -1117,9 +1183,9 @@ mod worldinnerconst {
                     }
                     SearchState::SearchRight => {
                         let slot_index = s.slot_index;
-                        let pos = index_to_position(self.dims, slot_index);
-                        let pos_next = [next_position_saturating(pos[0], dim_x), pos[1], pos[2]];
-                        let slot_index_next = position_to_index(self.dims, pos_next);
+                        let pos = morton_index_to_position(slot_index);
+                        let pos_next = [inc_position(pos[0], dim_x), pos[1], pos[2]];
+                        let slot_index_next = morton_position_to_index(pos_next);
 
                         s.search_state = SearchState::SearchFront;
 
@@ -1142,9 +1208,9 @@ mod worldinnerconst {
                     }
                     SearchState::SearchFront => {
                         let slot_index = s.slot_index;
-                        let pos = index_to_position(self.dims, slot_index);
-                        let pos_next = [pos[0], prev_position_saturating(pos[1], dim_y), pos[2]];
-                        let slot_index_next = position_to_index(self.dims, pos_next);
+                        let pos = morton_index_to_position(slot_index);
+                        let pos_next = [pos[0], dec_position(pos[1], dim_y), pos[2]];
+                        let slot_index_next = morton_position_to_index(pos_next);
 
                         s.search_state = SearchState::SearchBack;
 
@@ -1167,9 +1233,9 @@ mod worldinnerconst {
                     }
                     SearchState::SearchBack => {
                         let slot_index = s.slot_index;
-                        let pos = index_to_position(self.dims, slot_index);
-                        let pos_next = [pos[0], next_position_saturating(pos[1], dim_y), pos[2]];
-                        let slot_index_next = position_to_index(self.dims, pos_next);
+                        let pos = morton_index_to_position(slot_index);
+                        let pos_next = [pos[0], inc_position(pos[1], dim_y), pos[2]];
+                        let slot_index_next = morton_position_to_index(pos_next);
 
                         s.search_state = SearchState::SearchDown;
 
@@ -1192,9 +1258,9 @@ mod worldinnerconst {
                     }
                     SearchState::SearchDown => {
                         let slot_index = s.slot_index;
-                        let pos = index_to_position(self.dims, slot_index);
-                        let pos_next = [pos[0], pos[1], prev_position_saturating(pos[2], dim_z)];
-                        let slot_index_next = position_to_index(self.dims, pos_next);
+                        let pos = morton_index_to_position(slot_index);
+                        let pos_next = [pos[0], pos[1], dec_position(pos[2], dim_z)];
+                        let slot_index_next = morton_position_to_index(pos_next);
 
                         s.search_state = SearchState::SearchUp;
 
@@ -1217,9 +1283,9 @@ mod worldinnerconst {
                     }
                     SearchState::SearchUp => {
                         let slot_index = s.slot_index;
-                        let pos = index_to_position(self.dims, slot_index);
-                        let pos_next = [pos[0], pos[1], next_position_saturating(pos[2], dim_z)];
-                        let slot_index_next = position_to_index(self.dims, pos_next);
+                        let pos = morton_index_to_position(slot_index);
+                        let pos_next = [pos[0], pos[1], inc_position(pos[2], dim_z)];
+                        let slot_index_next = morton_position_to_index(pos_next);
 
                         s.search_state = SearchState::Done;
 
@@ -1323,12 +1389,12 @@ mod worldinnerconst {
         cast_u16(index)
     }
 
-    fn prev_position_saturating(pos: u16, dim: u16) -> u16 {
+    fn dec_position(pos: u16, dim: u16) -> u16 {
         assert!(dim > 0);
         pos.saturating_sub(1)
     }
 
-    fn next_position_saturating(pos: u16, dim: u16) -> u16 {
+    fn inc_position(pos: u16, dim: u16) -> u16 {
         assert!(dim > 0);
         pos.saturating_add(1).min(dim - 1)
     }
@@ -1358,6 +1424,59 @@ mod tests {
     #[should_panic]
     fn test_position_to_index_unit_oob() {
         position_to_index([1, 1, 1], [0, 0, 1]);
+    }
+
+    #[test]
+    fn test_morton_position_to_index() {
+        let positions: &[[u16; 3]] = &[
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+            [1, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [0, 1, 1],
+            [1, 1, 1],
+            [2, 0, 0],
+            [3, 0, 0],
+            [2, 1, 0],
+            [3, 1, 0],
+            [2, 0, 1],
+            [3, 0, 1],
+            [2, 1, 1],
+            [3, 1, 1],
+        ];
+
+        for (i, position) in positions.iter().enumerate() {
+            let index = morton_position_to_index(*position);
+            assert!(index == i);
+        }
+    }
+
+    #[test]
+    fn test_morton_roundtrip() {
+        let positions = [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+            [1, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [0, 1, 1],
+            [1, 1, 1],
+        ];
+
+        for z in 0..256 {
+            for y in 0..256 {
+                for x in 0..256 {
+                    let position = [x, y, z];
+                    let index = morton_position_to_index(position);
+                    let p = morton_index_to_position(index);
+
+                    assert!(p == position);
+                }
+            }
+        }
     }
 
     #[test]
