@@ -287,7 +287,7 @@ pub unsafe extern "C" fn wfc_world_state_free(wfc_world_state_handle: WfcWorldSt
         return;
     }
 
-    Box::from_raw(wfc_world_state_handle.0);
+    drop(Box::from_raw(wfc_world_state_handle.0));
 }
 
 #[repr(u32)]
@@ -540,7 +540,7 @@ pub unsafe extern "C" fn wfc_rng_state_free(wfc_rng_state_handle: WfcRngStateHan
         return;
     }
 
-    Box::from_raw(wfc_rng_state_handle.0);
+    drop(Box::from_raw(wfc_rng_state_handle.0));
 }
 
 /// Canonicalizes a Wave Function Collapse world.

@@ -93,7 +93,7 @@ impl<const N: usize> BitVec<N> {
         self.data = [0; N];
     }
 
-    pub fn iter(&self) -> BitVecIterator<N> {
+    pub fn iter(&self) -> BitVecIterator<'_, N> {
         BitVecIterator {
             bitvec: self,
             next: 0,
@@ -251,4 +251,3 @@ mod tests {
         assert_eq!(find_len_segment_size(129), 14);
     }
 }
-
