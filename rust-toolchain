@@ -1,3 +1,7 @@
 [toolchain]
-channel = "1.50.0"
+# Rust 1.74.x is the minimum version that builds cleanly on
+# aarch64-apple-darwin (Apple Silicon) with current macOS SDKs and
+# linkers. The previous pin of 1.50.0 predates first-class Apple Silicon
+# support and fails to install or link on modern M-series Macs.
+channel = "1.74.1"
 components = ["rustfmt", "clippy"]
