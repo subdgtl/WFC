@@ -21,5 +21,38 @@ Currently includes:
 
 `wfc_core`, `wfc_cli` and `wfc_dylib` are built with Rust's Cargo tool and
 follow standard Cargo workflows. Get rust via [Rustup](https://rustup.rs/).
+The required toolchain version is pinned in the `rust-toolchain` file at
+the workspace root and will be installed automatically by Rustup the first
+time you run a Cargo command.
 
-`wfc_gh` is built with Visual Studio, see `README.md` in `wfc_gh` for more.
+The Rust crates build on:
+
+- Linux (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`)
+- Windows (`x86_64-pc-windows-msvc`)
+- Intel Mac (`x86_64-apple-darwin`)
+- Apple Silicon Mac (`aarch64-apple-darwin`, e.g. M1/M2/M3/M4)
+
+To build everything in release mode:
+
+```
+cargo build --release
+```
+
+On an Apple Silicon Mac this produces `target/release/libwfc.dylib`
+(the `wfc_dylib` C ABI library) and `target/release/wfc_cli` as native
+arm64 binaries. If you need a universal (fat) binary that runs on both
+Intel and Apple Silicon Macs, build each target separately and stitch
+them together with `lipo`:
+
+```
+rustup target add x86_64-apple-darwin aarch64-apple-darwin
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+lipo -create -output target/libwfc.dylib \
+    target/x86_64-apple-darwin/release/libwfc.dylib \
+    target/aarch64-apple-darwin/release/libwfc.dylib
+```
+
+`wfc_gh` is a C# Grasshopper component for Rhino on Windows and is built
+with Visual Studio against the .NET Framework; see `README.md` in
+`wfc_gh` for more. It is not part of the Apple Silicon build.
