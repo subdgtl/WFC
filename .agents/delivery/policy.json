@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "repository": "subdgtl/WFC",
+  "main_ref": "refs/remotes/origin/master",
+  "inventory": [
+    "*"
+  ],
+  "integration": {
+    "budget_seconds": 300,
+    "requires_reviewed_plan": true,
+    "checks": [
+      {
+        "id": "delivery-policy",
+        "argv": [
+          "python3",
+          ".agents/delivery/repository.py",
+          "workflow"
+        ]
+      },
+      {
+        "id": "delivery-regressions",
+        "argv": [
+          "python3",
+          ".agents/delivery/checks.py",
+          "focused-runtime"
+        ]
+      }
+    ]
+  },
+  "verification": {
+    "require_independent_machine": true,
+    "platforms": {
+      "linux": {
+        "checks": [
+          {
+            "id": "rust-tests",
+            "argv": [
+              "cargo",
+              "test",
+              "--workspace"
+            ],
+            "timeout_seconds": 7200
+          },
+          {
+            "id": "rust-format",
+            "argv": [
+              "cargo",
+              "fmt",
+              "--all",
+              "--",
+              "--check"
+            ],
+            "timeout_seconds": 7200
+          },
+          {
+            "id": "full-delivery-regressions",
+            "argv": [
+              "python3",
+              ".agents/delivery/checks.py",
+              "full-runtime"
+            ],
+            "timeout_seconds": 300
+          }
+        ],
+        "environment_probes": [
+          {
+            "id": "python-version",
+            "argv": [
+              "python3",
+              "-c",
+              "import sys; assert sys.version_info >= (3,10), \"Install Python 3.10 or newer\""
+            ]
+          }
+        ],
+        "artifacts": []
+      },
+      "windows": {
+        "checks": [
+          {
+            "id": "grasshopper-build",
+            "argv": [
+              "dotnet",
+              "build",
+              "wfc_gh/wfc_gh.csproj"
+            ],
+            "timeout_seconds": 7200
+          },
+          {
+            "id": "full-delivery-regressions",
+            "argv": [
+              "python3",
+              ".agents/delivery/checks.py",
+              "full-runtime"
+            ],
+            "timeout_seconds": 300
+          }
+        ],
+        "environment_probes": [
+          {
+            "id": "python-version",
+            "argv": [
+              "python3",
+              "-c",
+              "import sys; assert sys.version_info >= (3,10), \"Install Python 3.10 or newer\""
+            ]
+          }
+        ],
+        "artifacts": []
+      }
+    }
+  },
+  "release": {
+    "blocked_reason": "Old pinned Rust and Rhino binary references need verified cloud support; no established full gate."
+  }
+}
